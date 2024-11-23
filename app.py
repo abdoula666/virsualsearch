@@ -91,6 +91,40 @@ try:
 except Exception as e:
     logger.error(f"Error connecting to WooCommerce API: {str(e)}", exc_info=True)
 
+# Test site accessibility and API endpoints
+try:
+    logger.info("Testing site accessibility...")
+    
+    # Test base URL
+    base_response = requests.get(WOOCOMMERCE_URL, verify=False)
+    logger.info(f"Base URL response code: {base_response.status_code}")
+    
+    # Test different API endpoint formats
+    endpoints = [
+        f"{WOOCOMMERCE_URL}/wp-json",
+        f"{WOOCOMMERCE_URL}/index.php/wp-json",
+        f"{WOOCOMMERCE_URL}/index.php?rest_route=/",
+        f"{WOOCOMMERCE_URL}/wp-json/wc/v3/products"
+    ]
+    
+    for endpoint in endpoints:
+        logger.info(f"\nTesting endpoint: {endpoint}")
+        try:
+            response = requests.get(endpoint, 
+                                 params={'consumer_key': CONSUMER_KEY, 
+                                        'consumer_secret': CONSUMER_SECRET},
+                                 verify=False,
+                                 timeout=10)
+            logger.info(f"Response code: {response.status_code}")
+            logger.info(f"Response headers: {dict(response.headers)}")
+            if response.status_code != 404:
+                logger.info(f"Response content: {response.text[:200]}...")  # First 200 chars
+        except Exception as e:
+            logger.error(f"Error testing endpoint {endpoint}: {str(e)}")
+            
+except Exception as e:
+    logger.error(f"Error testing site accessibility: {str(e)}")
+
 # Initialize ResNet model with custom top layer
 base_model = ResNet50(weights='imagenet', include_top=False)
 x = base_model.output
