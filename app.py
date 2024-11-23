@@ -35,25 +35,38 @@ CONSUMER_KEY = os.getenv('CONSUMER_KEY')
 CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 
 logger.info(f"Initializing WooCommerce API with URL: {WOOCOMMERCE_URL}")
+
+# Initialize WooCommerce API with proper URL handling
 wcapi = API(
     url=WOOCOMMERCE_URL,
     consumer_key=CONSUMER_KEY,
     consumer_secret=CONSUMER_SECRET,
+    wp_api=True,  # Enable WordPress REST API integration
     version="wc/v3",
-    verify_ssl=False  # Add this if there are SSL verification issues
+    verify_ssl=False,  # For development only
+    query_string_auth=True  # Force query string authentication
 )
 
-# Test WooCommerce connection
+# Test WooCommerce connection with proper URL
 try:
     logger.info("Testing WooCommerce connection...")
-    response = wcapi.get("products")
+    test_url = f"{WOOCOMMERCE_URL}/wp-json/wc/v3/products"
+    logger.info(f"Testing endpoint: {test_url}")
+    
+    response = wcapi.get("products", params={
+        'per_page': 1,
+        'status': 'publish'
+    })
+    
     if response.status_code == 200:
         logger.info("Successfully connected to WooCommerce API")
+        logger.info(f"Sample response: {response.json()[:1]}")  # Log first product
     else:
         logger.error(f"Failed to connect to WooCommerce API. Status code: {response.status_code}")
         logger.error(f"Response: {response.text}")
+        logger.error(f"Request URL: {response.url}")
 except Exception as e:
-    logger.error(f"Error connecting to WooCommerce API: {str(e)}")
+    logger.error(f"Error connecting to WooCommerce API: {str(e)}", exc_info=True)
 
 # Initialize ResNet model with custom top layer
 base_model = ResNet50(weights='imagenet', include_top=False)
