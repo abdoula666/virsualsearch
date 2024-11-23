@@ -30,11 +30,69 @@ CORS(app)  # Enable CORS for all routes
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # WooCommerce configuration
-WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL', 'https://cgbshop1.com')  # Base URL without /wp-json
+WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL', 'https://cgbshop1.com').rstrip('/')  # Remove trailing slash
 CONSUMER_KEY = os.getenv('CONSUMER_KEY')
 CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 
-logger.info(f"Initializing WooCommerce API with URL: {WOOCOMMERCE_URL}")
+logger.info(f"Starting API tests with base URL: {WOOCOMMERCE_URL}")
+
+def test_url_connection(url, description=""):
+    """Test connection to a URL with detailed logging"""
+    try:
+        logger.info(f"\nTesting {description} URL: {url}")
+        response = requests.get(url, 
+                              verify=False, 
+                              timeout=10,
+                              allow_redirects=True)  # Allow redirects
+        
+        logger.info(f"Status Code: {response.status_code}")
+        logger.info(f"Final URL after redirects: {response.url}")
+        logger.info(f"Headers: {dict(response.headers)}")
+        
+        if response.history:
+            logger.info("Redirects occurred:")
+            for r in response.history:
+                logger.info(f"  {r.status_code} -> {r.url}")
+        
+        if response.status_code != 404:
+            logger.info(f"Content preview: {response.text[:200]}...")
+        
+        return response
+    except requests.exceptions.SSLError as e:
+        logger.error(f"SSL Error for {url}: {str(e)}")
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Connection Error for {url}: {str(e)}")
+    except requests.exceptions.Timeout as e:
+        logger.error(f"Timeout Error for {url}: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error for {url}: {str(e)}")
+    return None
+
+# Test basic site connectivity
+test_url_connection(WOOCOMMERCE_URL, "base site")
+test_url_connection(f"{WOOCOMMERCE_URL}/wp-admin", "WordPress admin")
+
+# Test WordPress REST API endpoints
+api_endpoints = [
+    ("/wp-json", "WordPress REST API root"),
+    ("/wp-json/wp/v2/posts", "WordPress posts API"),
+    ("/wp-json/wc/v3/products", "WooCommerce products API")
+]
+
+for endpoint, desc in api_endpoints:
+    url = f"{WOOCOMMERCE_URL}{endpoint}"
+    params = {'consumer_key': CONSUMER_KEY, 'consumer_secret': CONSUMER_SECRET} if 'wc/v3' in endpoint else {}
+    try:
+        logger.info(f"\nTesting {desc}")
+        logger.info(f"URL: {url}")
+        logger.info(f"Params: {params}")
+        response = requests.get(url, params=params, verify=False, timeout=10)
+        logger.info(f"Status: {response.status_code}")
+        logger.info(f"Headers: {dict(response.headers)}")
+        if response.status_code != 404:
+            logger.info(f"Content: {response.text[:200]}...")
+    except Exception as e:
+        logger.error(f"Error testing {desc}: {str(e)}")
 
 def make_api_request(endpoint, params=None):
     """Make a request to the WooCommerce API with proper URL handling"""
