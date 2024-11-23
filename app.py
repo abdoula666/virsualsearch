@@ -15,17 +15,29 @@ from datetime import datetime, timedelta
 from sklearn.preprocessing import normalize
 import requests
 from base64 import b64encode
+from dotenv import load_dotenv
+from woocommerce import API
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+load_dotenv()
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# WooCommerce API Configuration
-WOOCOMMERCE_URL = "https://cgbshop1.com/wp-json/wc/v3"
-CONSUMER_KEY = "ck_da1507a982310e8a29d704df57b4e886b26d528a"
-CONSUMER_SECRET = "cs_2917aeffff79c6bb2427849b617f0c992959f301"
+# WooCommerce configuration
+WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL')
+CONSUMER_KEY = os.getenv('CONSUMER_KEY')
+CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
+
+wcapi = API(
+    url=WOOCOMMERCE_URL,
+    consumer_key=CONSUMER_KEY,
+    consumer_secret=CONSUMER_SECRET,
+    version="wc/v3"
+)
 
 # Initialize ResNet model with custom top layer
 base_model = ResNet50(weights='imagenet', include_top=False)
@@ -52,11 +64,7 @@ class ProductManager:
             if last_check_time:
                 params['modified_after'] = last_check_time
             
-            response = requests.get(
-                f"{WOOCOMMERCE_URL}/products",
-                params=params,
-                auth=(CONSUMER_KEY, CONSUMER_SECRET)
-            )
+            response = wcapi.get("products", params=params)
             
             if response.status_code == 200:
                 new_products = response.json()
