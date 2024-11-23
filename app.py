@@ -233,6 +233,11 @@ def search():
         return jsonify({'error': 'Error processing image'}), 500
 
 if __name__ == '__main__':
-    # Initialize product manager and start loading products
-    product_manager.check_new_products()
-    app.run(debug=True)
+    # Start the background scheduler
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(product_manager.check_new_products, 'interval', minutes=5)
+    scheduler.start()
+    
+    # In production, let the production server handle the port
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
