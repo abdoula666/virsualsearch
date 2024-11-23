@@ -139,19 +139,11 @@ class ProductManager:
                 except Exception as e:
                     logger.error(f"Error processing image for product {product['id']}: {str(e)}")
 
-# Initialize product manager and load products
+# Initialize product manager and load products immediately
+logger.info("Initializing ProductManager and loading initial products...")
 product_manager = ProductManager()
-
-# Create blueprint for initialization
-from flask import Blueprint
-
-init_app = Blueprint('init_app', __name__)
-
-@init_app.before_app_first_request
-def initial_load():
-    product_manager.check_new_products()
-
-app.register_blueprint(init_app)
+product_manager.check_new_products()  # Load products immediately
+logger.info(f"Initial product load complete. Loaded {len(product_manager.products)} products.")
 
 @app.route('/')
 def index():
