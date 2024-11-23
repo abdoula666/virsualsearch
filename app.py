@@ -60,6 +60,7 @@ class ProductManager:
     
     def check_new_products(self):
         try:
+            logger.info("Starting to fetch products from WooCommerce...")
             last_check_time = self.last_check.isoformat() if self.last_check else None
             
             params = {'per_page': 100}
@@ -70,9 +71,12 @@ class ProductManager:
             
             if response.status_code == 200:
                 new_products = response.json()
+                logger.info(f"Fetched {len(new_products)} products from WooCommerce")
+                
                 if new_products:
                     for product in new_products:
                         if product['id'] not in [p['id'] for p in self.products]:
+                            logger.info(f"Adding new product: {product['name']} (ID: {product['id']})")
                             self.products.append({
                                 'id': product['id'],
                                 'name': product['name'],
@@ -83,14 +87,20 @@ class ProductManager:
                                 'attributes': product.get('attributes', [])
                             })
                     
+                    logger.info("Updating features for new products...")
                     self.update_features()
+                    logger.info("Updating category weights...")
                     self.update_category_weights()
+                    logger.info("Product updates completed successfully")
                 
                 self.last_check = datetime.now()
-                logger.info(f"Checked for new products at {self.last_check}")
+                logger.info(f"Product check completed at {self.last_check}")
+            else:
+                logger.error(f"Failed to fetch products. Status code: {response.status_code}")
+                logger.error(f"Response: {response.text}")
         
         except Exception as e:
-            logger.error(f"Error checking for new products: {str(e)}")
+            logger.error(f"Error checking for new products: {str(e)}", exc_info=True)
     
     def update_category_weights(self):
         """Update category importance weights based on product distribution"""
@@ -130,6 +140,11 @@ class ProductManager:
                     logger.error(f"Error processing image for product {product['id']}: {str(e)}")
 
 product_manager = ProductManager()
+
+# Initial product load
+@app.before_first_request
+def initial_load():
+    product_manager.check_new_products()
 
 def calculate_similarity_score(query_features, product_features, product_categories, query_category=None):
     """Calculate weighted similarity score considering visual features and categories"""
