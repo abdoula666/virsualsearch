@@ -30,16 +30,30 @@ CORS(app)  # Enable CORS for all routes
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # WooCommerce configuration
-WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL')
+WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL', 'https://cgbshop1.com')  # Base URL without /wp-json
 CONSUMER_KEY = os.getenv('CONSUMER_KEY')
 CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 
+logger.info(f"Initializing WooCommerce API with URL: {WOOCOMMERCE_URL}")
 wcapi = API(
     url=WOOCOMMERCE_URL,
     consumer_key=CONSUMER_KEY,
     consumer_secret=CONSUMER_SECRET,
-    version="wc/v3"
+    version="wc/v3",
+    verify_ssl=False  # Add this if there are SSL verification issues
 )
+
+# Test WooCommerce connection
+try:
+    logger.info("Testing WooCommerce connection...")
+    response = wcapi.get("products")
+    if response.status_code == 200:
+        logger.info("Successfully connected to WooCommerce API")
+    else:
+        logger.error(f"Failed to connect to WooCommerce API. Status code: {response.status_code}")
+        logger.error(f"Response: {response.text}")
+except Exception as e:
+    logger.error(f"Error connecting to WooCommerce API: {str(e)}")
 
 # Initialize ResNet model with custom top layer
 base_model = ResNet50(weights='imagenet', include_top=False)
@@ -61,12 +75,17 @@ class ProductManager:
     def check_new_products(self):
         try:
             logger.info("Starting to fetch products from WooCommerce...")
-            last_check_time = self.last_check.isoformat() if self.last_check else None
+            params = {
+                'per_page': 100,
+                'status': 'publish',  # Only get published products
+                'orderby': 'date',
+                'order': 'desc'
+            }
             
-            params = {'per_page': 100}
-            if last_check_time:
-                params['modified_after'] = last_check_time
+            if self.last_check:
+                params['after'] = self.last_check.isoformat()
             
+            logger.info(f"Requesting products with params: {params}")
             response = wcapi.get("products", params=params)
             
             if response.status_code == 200:
@@ -75,30 +94,47 @@ class ProductManager:
                 
                 if new_products:
                     for product in new_products:
+                        if 'id' not in product:
+                            logger.warning(f"Product missing ID: {product}")
+                            continue
+                            
                         if product['id'] not in [p['id'] for p in self.products]:
-                            logger.info(f"Adding new product: {product['name']} (ID: {product['id']})")
-                            self.products.append({
-                                'id': product['id'],
-                                'name': product['name'],
-                                'price': product['price'],
-                                'image_path': product['images'][0]['src'] if product['images'] else None,
-                                'product_url': product['permalink'],
-                                'categories': [cat['name'] for cat in product.get('categories', [])],
-                                'attributes': product.get('attributes', [])
-                            })
+                            try:
+                                product_data = {
+                                    'id': product['id'],
+                                    'name': product.get('name', 'Unnamed Product'),
+                                    'price': product.get('price', '0.00'),
+                                    'image_path': product['images'][0]['src'] if product.get('images') else None,
+                                    'product_url': product.get('permalink', ''),
+                                    'categories': [cat['name'] for cat in product.get('categories', [])],
+                                    'attributes': product.get('attributes', [])
+                                }
+                                
+                                if product_data['image_path']:
+                                    logger.info(f"Adding product: {product_data['name']} (ID: {product_data['id']})")
+                                    self.products.append(product_data)
+                                else:
+                                    logger.warning(f"Skipping product {product_data['id']} - No image available")
+                            except Exception as e:
+                                logger.error(f"Error processing product {product.get('id', 'unknown')}: {str(e)}")
+                                continue
                     
-                    logger.info("Updating features for new products...")
-                    self.update_features()
-                    logger.info("Updating category weights...")
-                    self.update_category_weights()
-                    logger.info("Product updates completed successfully")
+                    if self.products:
+                        logger.info("Updating features for new products...")
+                        self.update_features()
+                        logger.info("Updating category weights...")
+                        self.update_category_weights()
+                        logger.info(f"Product updates completed. Total products: {len(self.products)}")
+                    else:
+                        logger.warning("No valid products found to process")
+                else:
+                    logger.info("No new products found")
                 
                 self.last_check = datetime.now()
-                logger.info(f"Product check completed at {self.last_check}")
             else:
                 logger.error(f"Failed to fetch products. Status code: {response.status_code}")
                 logger.error(f"Response: {response.text}")
-        
+                logger.error(f"Request URL: {response.url}")
         except Exception as e:
             logger.error(f"Error checking for new products: {str(e)}", exc_info=True)
     
