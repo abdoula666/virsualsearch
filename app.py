@@ -139,31 +139,19 @@ class ProductManager:
                 except Exception as e:
                     logger.error(f"Error processing image for product {product['id']}: {str(e)}")
 
+# Initialize product manager and load products
 product_manager = ProductManager()
 
-# Initial product load
-@app.before_first_request
+# Create blueprint for initialization
+from flask import Blueprint
+
+init_app = Blueprint('init_app', __name__)
+
+@init_app.before_app_first_request
 def initial_load():
     product_manager.check_new_products()
 
-def calculate_similarity_score(query_features, product_features, product_categories, query_category=None):
-    """Calculate weighted similarity score considering visual features and categories"""
-    # Base visual similarity using cosine similarity
-    visual_similarity = np.dot(query_features, product_features) / (
-        np.linalg.norm(query_features) * np.linalg.norm(product_features)
-    )
-    
-    # Category bonus
-    category_bonus = 0
-    if query_category:
-        for category in product_categories:
-            if category.lower() in query_category.lower() or query_category.lower() in category.lower():
-                category_bonus += product_manager.category_weights.get(category, 0.1)
-    
-    # Combine scores (70% visual, 30% category when category is provided)
-    final_score = visual_similarity * (0.7 if query_category else 1.0) + category_bonus * 0.3
-    
-    return final_score
+app.register_blueprint(init_app)
 
 @app.route('/')
 def index():
@@ -248,6 +236,25 @@ def search():
     except Exception as e:
         logger.error(f"Error processing search: {str(e)}")
         return jsonify({'error': 'Error processing image'}), 500
+
+def calculate_similarity_score(query_features, product_features, product_categories, query_category=None):
+    """Calculate weighted similarity score considering visual features and categories"""
+    # Base visual similarity using cosine similarity
+    visual_similarity = np.dot(query_features, product_features) / (
+        np.linalg.norm(query_features) * np.linalg.norm(product_features)
+    )
+    
+    # Category bonus
+    category_bonus = 0
+    if query_category:
+        for category in product_categories:
+            if category.lower() in query_category.lower() or query_category.lower() in category.lower():
+                category_bonus += product_manager.category_weights.get(category, 0.1)
+    
+    # Combine scores (70% visual, 30% category when category is provided)
+    final_score = visual_similarity * (0.7 if query_category else 1.0) + category_bonus * 0.3
+    
+    return final_score
 
 if __name__ == '__main__':
     # Start the background scheduler
