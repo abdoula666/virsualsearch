@@ -21,6 +21,8 @@ from woocommerce import API
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
+from limits.strategies import MovingWindowRateLimiter
+from limits.storage import MemoryStorage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,10 +51,13 @@ Talisman(app,
          },
          force_https=True)
 
-# Add rate limiting
+# Add rate limiting with memory storage
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
+    storage_uri="memory://",
+    storage_options={},
+    strategy=MovingWindowRateLimiter,
     default_limits=["200 per day", "50 per hour"]
 )
 
