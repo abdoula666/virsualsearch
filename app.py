@@ -18,6 +18,8 @@ import requests
 from base64 import b64encode
 from dotenv import load_dotenv
 from woocommerce import API
+import json
+import sys
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,10 +41,45 @@ wcapi = API(
     url=WOOCOMMERCE_URL,
     consumer_key=CONSUMER_KEY,
     consumer_secret=CONSUMER_SECRET,
-    version="v3",
+    version="wc/v3",  # Updated to match WooCommerce REST API version
     verify_ssl=False,
-    query_string_auth=True  # Use query string authentication
+    query_string_auth=True,
+    timeout=30
 )
+
+# Test WooCommerce connection
+def test_woocommerce_connection():
+    try:
+        logger.info("Testing WooCommerce connection...")
+        response = wcapi.get("products", params={"per_page": 1})
+        
+        if not isinstance(response, requests.Response):
+            logger.error("WooCommerce API did not return a Response object")
+            return False
+            
+        logger.info(f"Response Status Code: {response.status_code}")
+        logger.info(f"Response Headers: {response.headers}")
+        
+        if response.status_code == 200:
+            try:
+                products = response.json()
+                logger.info(f"Successfully parsed JSON response: {products[:100]}")
+                return True
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response: {str(e)}")
+                logger.error(f"Response content: {response.text[:500]}")
+                return False
+        else:
+            logger.error(f"Failed to connect to WooCommerce. Status code: {response.status_code}")
+            logger.error(f"Response content: {response.text[:500]}")
+            return False
+    except Exception as e:
+        logger.error(f"Error testing WooCommerce connection: {str(e)}")
+        return False
+
+# Test connection before starting
+if not test_woocommerce_connection():
+    logger.error("Failed to establish WooCommerce connection. Check your credentials and URL.")
 
 logger.info("Initializing application...")
 logger.info(f"WooCommerce URL: {WOOCOMMERCE_URL}")
@@ -161,13 +198,30 @@ class ProductManager:
             
             response = self.wcapi.get("products", params=params)
             
+            if not isinstance(response, requests.Response):
+                logger.error("WooCommerce API did not return a Response object")
+                return None
+            
+            logger.info(f"Response Status Code: {response.status_code}")
+            logger.info(f"Response Headers: {response.headers}")
+            
             if response.status_code == 200:
-                products = response.json()
-                logger.info(f"Successfully fetched {len(products)} products")
-                return products
+                try:
+                    products = response.json()
+                    if isinstance(products, list):
+                        logger.info(f"Successfully fetched {len(products)} products")
+                        return products
+                    else:
+                        logger.error(f"Unexpected response format. Expected list, got: {type(products)}")
+                        logger.error(f"Response content: {products}")
+                        return None
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {str(e)}")
+                    logger.error(f"Response content: {response.text[:500]}")
+                    return None
             else:
                 logger.error(f"Failed to fetch products. Status code: {response.status_code}")
-                logger.error(f"Response: {response.text}")
+                logger.error(f"Response content: {response.text[:500]}")
                 return None
         except Exception as e:
             logger.error(f"Error fetching products: {str(e)}")
@@ -355,13 +409,37 @@ def test_connection():
 @app.route('/status')
 def get_status():
     """Get the application status including product initialization"""
-    status = {
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'initialization': product_manager.get_initialization_status(),
-        'woocommerce_url': WOOCOMMERCE_URL
-    }
-    return jsonify(status), 200
+    try:
+        # Test WooCommerce connection
+        test_result = test_woocommerce_connection()
+        
+        # Get initialization status
+        init_status = product_manager.get_initialization_status()
+        
+        status = {
+            'status': 'healthy' if test_result else 'unhealthy',
+            'timestamp': datetime.now().isoformat(),
+            'woocommerce': {
+                'connection': 'ok' if test_result else 'failed',
+                'url': WOOCOMMERCE_URL,
+                'has_credentials': bool(CONSUMER_KEY and CONSUMER_SECRET)
+            },
+            'initialization': init_status,
+            'environment': {
+                'python_version': sys.version,
+                'platform': sys.platform,
+                'tensorflow_version': tf.__version__
+            }
+        }
+        
+        return jsonify(status), 200 if test_result else 503
+    except Exception as e:
+        logger.error(f"Error in status endpoint: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 @app.route('/health_check')
 def health_check():
