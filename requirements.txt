@@ -13,3 +13,5 @@ gunicorn>=20.1.0
 boto3>=1.26.0
 botocore>=1.29.0
 aws-cli>=1.27.0
+Flask-Limiter>=3.3.0
+Flask-Talisman>=1.0.0
