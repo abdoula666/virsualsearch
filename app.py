@@ -34,39 +34,33 @@ WOOCOMMERCE_URL = os.environ.get('WOOCOMMERCE_URL', '').rstrip('/')  # Remove tr
 CONSUMER_KEY = os.environ.get('CONSUMER_KEY', '')
 CONSUMER_SECRET = os.environ.get('CONSUMER_SECRET', '')
 
+# Initialize WooCommerce API
+wcapi = API(
+    url=WOOCOMMERCE_URL,
+    consumer_key=CONSUMER_KEY,
+    consumer_secret=CONSUMER_SECRET,
+    version="v3",
+    verify_ssl=False,
+    query_string_auth=True  # Use query string authentication
+)
+
+logger.info("Initializing application...")
+logger.info(f"WooCommerce URL: {WOOCOMMERCE_URL}")
+
 logger.info(f"Starting API tests with base URL: {WOOCOMMERCE_URL}")
 
 def test_url_connection(url, description=""):
     """Test connection to a URL with detailed logging"""
     try:
-        logger.info(f"\nTesting {description} URL: {url}")
-        response = requests.get(url, 
-                              verify=False, 
-                              timeout=10,
-                              allow_redirects=True)  # Allow redirects
-        
-        logger.info(f"Status Code: {response.status_code}")
-        logger.info(f"Final URL after redirects: {response.url}")
-        logger.info(f"Headers: {dict(response.headers)}")
-        
-        if response.history:
-            logger.info("Redirects occurred:")
-            for r in response.history:
-                logger.info(f"  {r.status_code} -> {r.url}")
-        
-        if response.status_code != 404:
-            logger.info(f"Content preview: {response.text[:200]}...")
-        
-        return response
-    except requests.exceptions.SSLError as e:
-        logger.error(f"SSL Error for {url}: {str(e)}")
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"Connection Error for {url}: {str(e)}")
-    except requests.exceptions.Timeout as e:
-        logger.error(f"Timeout Error for {url}: {str(e)}")
+        response = requests.get(url, verify=False)
+        logger.info(f"Response code: {response.status_code}")
+        logger.info(f"Response headers: {response.headers}")
+        if response.status_code == 200:
+            logger.info(f"Response content: \n{response.text[:200]}...")
+        return response.status_code == 200
     except Exception as e:
-        logger.error(f"Unexpected error for {url}: {str(e)}")
-    return None
+        logger.error(f"Error testing {description}: {str(e)}")
+        return False
 
 # Test basic site connectivity
 test_url_connection(WOOCOMMERCE_URL, "base site")
@@ -94,94 +88,37 @@ for endpoint, desc in api_endpoints:
     except Exception as e:
         logger.error(f"Error testing {desc}: {str(e)}")
 
-def make_api_request(endpoint, params=None):
-    """Make a request to the WooCommerce API with proper URL handling"""
-    if params is None:
-        params = {}
-    
-    # Add authentication
-    params.update({
-        'consumer_key': CONSUMER_KEY,
-        'consumer_secret': CONSUMER_SECRET
-    })
-    
-    # Construct URL properly
-    url = f"{WOOCOMMERCE_URL}/wp-json/wc/v3/{endpoint}"
-    logger.info(f"Making API request to: {url}")
-    
-    try:
-        response = requests.get(url, params=params, verify=False)
-        logger.info(f"Response status code: {response.status_code}")
-        return response
-    except Exception as e:
-        logger.error(f"API request failed: {str(e)}")
-        return None
-
-# Test WordPress connection first
-try:
-    logger.info("Testing WordPress REST API...")
-    wp_url = f"{WOOCOMMERCE_URL}/wp-json"
-    response = requests.get(wp_url, verify=False)
-    logger.info(f"WordPress API response code: {response.status_code}")
-    if response.status_code == 200:
-        logger.info("WordPress REST API is accessible")
-    else:
-        logger.error("WordPress REST API is not accessible")
-        logger.error(f"Response: {response.text}")
-except Exception as e:
-    logger.error(f"Error testing WordPress API: {str(e)}")
-
-# Test WooCommerce connection
-try:
-    logger.info("Testing WooCommerce connection...")
-    response = make_api_request('products', {'per_page': 1, 'status': 'publish'})
-    
-    if response and response.status_code == 200:
-        logger.info("Successfully connected to WooCommerce API")
-        products = response.json()
-        if products:
-            logger.info(f"Sample product: {products[0]['name']}")
-    else:
-        status = response.status_code if response else 'No response'
-        logger.error(f"Failed to connect to WooCommerce API. Status: {status}")
-        if response:
-            logger.error(f"Response: {response.text}")
-except Exception as e:
-    logger.error(f"Error connecting to WooCommerce API: {str(e)}", exc_info=True)
-
-# Test site accessibility and API endpoints
-try:
-    logger.info("Testing site accessibility...")
-    
-    # Test base URL
-    base_response = requests.get(WOOCOMMERCE_URL, verify=False)
-    logger.info(f"Base URL response code: {base_response.status_code}")
-    
-    # Test different API endpoint formats
-    endpoints = [
-        f"{WOOCOMMERCE_URL}/wp-json",
-        f"{WOOCOMMERCE_URL}/index.php/wp-json",
-        f"{WOOCOMMERCE_URL}/index.php?rest_route=/",
-        f"{WOOCOMMERCE_URL}/wp-json/wc/v3/products"
-    ]
-    
-    for endpoint in endpoints:
-        logger.info(f"\nTesting endpoint: {endpoint}")
+class ProductManager:
+    def __init__(self):
+        self.products = []
+        self.feature_vectors = []
+        self.last_update = None
+        self.wcapi = wcapi
+        
+    def fetch_products(self):
+        """Fetch products from WooCommerce API"""
         try:
-            response = requests.get(endpoint, 
-                                 params={'consumer_key': CONSUMER_KEY, 
-                                        'consumer_secret': CONSUMER_SECRET},
-                                 verify=False,
-                                 timeout=10)
-            logger.info(f"Response code: {response.status_code}")
-            logger.info(f"Response headers: {dict(response.headers)}")
-            if response.status_code != 404:
-                logger.info(f"Response content: {response.text[:200]}...")  # First 200 chars
-        except Exception as e:
-            logger.error(f"Error testing endpoint {endpoint}: {str(e)}")
+            params = {
+                'per_page': 100,
+                'status': 'publish',
+                'orderby': 'date',
+                'order': 'desc'
+            }
+            logger.info(f"Requesting products with params: {params}")
             
-except Exception as e:
-    logger.error(f"Error testing site accessibility: {str(e)}")
+            response = self.wcapi.get("products", params=params)
+            
+            if response.status_code == 200:
+                products = response.json()
+                logger.info(f"Successfully fetched {len(products)} products")
+                return products
+            else:
+                logger.error(f"Failed to fetch products. Status code: {response.status_code}")
+                logger.error(f"Response: {response.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching products: {str(e)}")
+            return None
 
 # Initialize ResNet model with custom top layer
 base_model = ResNet50(weights='imagenet', include_top=False)
@@ -214,10 +151,10 @@ class ProductManager:
                 params['after'] = self.last_check.isoformat()
             
             logger.info(f"Requesting products with params: {params}")
-            response = make_api_request('products', params=params)
+            response = self.fetch_products()
             
-            if response and response.status_code == 200:
-                new_products = response.json()
+            if response:
+                new_products = response
                 logger.info(f"Fetched {len(new_products)} products from WooCommerce")
                 
                 if new_products:
@@ -260,10 +197,7 @@ class ProductManager:
                 
                 self.last_check = datetime.now()
             else:
-                status = response.status_code if response else 'No response'
-                logger.error(f"Failed to fetch products. Status: {status}")
-                if response:
-                    logger.error(f"Response: {response.text}")
+                logger.error(f"Failed to fetch products.")
         except Exception as e:
             logger.error(f"Error checking for new products: {str(e)}", exc_info=True)
     
@@ -318,7 +252,7 @@ def home():
 def get_products():
     try:
         # Get products from WooCommerce
-        products = wcapi.get("products").json()
+        products = product_manager.fetch_products()
         return jsonify(products)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -327,11 +261,11 @@ def get_products():
 def test_connection():
     try:
         # Test WooCommerce connection
-        response = wcapi.get("products")
-        if response.status_code == 200:
+        response = product_manager.fetch_products()
+        if response:
             return jsonify({"status": "success", "message": "Connected to WooCommerce successfully"})
         else:
-            return jsonify({"status": "error", "message": f"Connection failed with status code: {response.status_code}"})
+            return jsonify({"status": "error", "message": "Connection failed"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
