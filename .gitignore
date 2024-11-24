@@ -1,6 +1,8 @@
 # Environment variables and secrets
 .env
 .env.*
+!.env.template
+!.env.example
 *.pem
 credentials.json
 config.json
