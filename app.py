@@ -94,7 +94,60 @@ class ProductManager:
         self.feature_vectors = []
         self.last_update = None
         self.wcapi = wcapi
+        self.initialization_status = "not_started"
+        self.initialization_error = None
+        # Immediately load products
+        self.initialize()
         
+    def initialize(self):
+        """Initialize the product manager and load initial products"""
+        try:
+            self.initialization_status = "in_progress"
+            logger.info("Starting initial product load...")
+            
+            # Fetch initial products
+            products = self.fetch_products()
+            if products:
+                self.products = products
+                logger.info(f"Successfully loaded {len(products)} initial products")
+                
+                # Process feature vectors for initial products
+                for product in self.products:
+                    try:
+                        if product.get('images') and len(product['images']) > 0:
+                            image_url = product['images'][0]['src']
+                            response = requests.get(image_url, verify=False)
+                            if response.status_code == 200:
+                                img = Image.open(io.BytesIO(response.content))
+                                feature_vector = extract_features(img)
+                                if feature_vector is not None:
+                                    self.feature_vectors.append(feature_vector)
+                                    logger.info(f"Processed features for product {product['id']}")
+                    except Exception as e:
+                        logger.error(f"Error processing product {product.get('id', 'unknown')}: {str(e)}")
+                        continue
+                
+                self.initialization_status = "completed"
+                self.last_update = datetime.now()
+            else:
+                self.initialization_status = "failed"
+                self.initialization_error = "Failed to fetch initial products"
+                logger.error("Failed to load initial products")
+        except Exception as e:
+            self.initialization_status = "failed"
+            self.initialization_error = str(e)
+            logger.error(f"Error during initialization: {str(e)}")
+    
+    def get_initialization_status(self):
+        """Get the current initialization status"""
+        return {
+            "status": self.initialization_status,
+            "error": self.initialization_error,
+            "product_count": len(self.products),
+            "feature_count": len(self.feature_vectors),
+            "last_update": self.last_update.isoformat() if self.last_update else None
+        }
+    
     def fetch_products(self):
         """Fetch products from WooCommerce API"""
         try:
@@ -126,6 +179,13 @@ x = base_model.output
 x = GlobalAveragePooling2D()(x)
 feature_extractor = tf.keras.Model(inputs=base_model.input, outputs=x)
 
+def extract_features(img):
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)
+    features = feature_extractor.predict(img_array, verbose=0)
+    return features.flatten()
+
 class ProductManager:
     def __init__(self):
         self.last_check = None
@@ -133,7 +193,6 @@ class ProductManager:
         self.features = {}
         self.model = None
         self.scheduler = BackgroundScheduler()
-        self.scheduler.add_job(self.check_new_products, 'interval', minutes=5)
         self.scheduler.start()
         self.category_weights = {}  # Store category importance weights
     
@@ -238,14 +297,38 @@ class ProductManager:
                 except Exception as e:
                     logger.error(f"Error processing image for product {product['id']}: {str(e)}")
 
-# Initialize product manager and load products immediately
-logger.info("Initializing ProductManager and loading initial products...")
+# Initialize scheduler
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+# Initialize product manager
 product_manager = ProductManager()
-product_manager.check_new_products()  # Load products immediately
-logger.info(f"Initial product load complete. Loaded {len(product_manager.products)} products.")
+
+# Add job to check for new products every 5 minutes
+scheduler.add_job(
+    product_manager.check_new_products,
+    'interval',
+    minutes=5,
+    id='check_new_products',
+    replace_existing=True
+)
+
+# Add initialization retry job if initial load fails
+def retry_initialization():
+    if product_manager.initialization_status == "failed":
+        logger.info("Retrying product initialization...")
+        product_manager.initialize()
+
+scheduler.add_job(
+    retry_initialization,
+    'interval',
+    minutes=1,
+    id='retry_initialization',
+    replace_existing=True
+)
 
 @app.route('/')
-def home():
+def index():
     return render_template('index.html')
 
 @app.route('/products')
@@ -271,14 +354,14 @@ def test_connection():
 
 @app.route('/status')
 def get_status():
-    with threading.Lock():
-        products_loaded = len(product_manager.products)
-        features_loaded = len(product_manager.features)
-        is_ready = products_loaded > 0 and products_loaded == features_loaded
-        return jsonify({
-            'ready': is_ready,
-            'product_count': products_loaded
-        })
+    """Get the application status including product initialization"""
+    status = {
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'initialization': product_manager.get_initialization_status(),
+        'woocommerce_url': WOOCOMMERCE_URL
+    }
+    return jsonify(status), 200
 
 @app.route('/health_check')
 def health_check():
@@ -289,11 +372,19 @@ def health_check():
 
 @app.route('/search', methods=['POST'])
 def search():
+    # Check initialization status
+    if product_manager.initialization_status != "completed":
+        status = product_manager.get_initialization_status()
+        return jsonify({
+            'error': 'Products still loading or initialization failed',
+            'status': status
+        }), 503
+    
     if len(product_manager.products) == 0:
-        return jsonify({'error': 'Products still loading, please wait'}), 503
+        return jsonify({'error': 'No products available'}), 503
 
     if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
+        return jsonify({'error': 'No file provided'}), 400
 
     file = request.files['file']
     if file.filename == '':
@@ -376,11 +467,6 @@ def calculate_similarity_score(query_features, product_features, product_categor
     return final_score
 
 if __name__ == '__main__':
-    # Start the background scheduler
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(product_manager.check_new_products, 'interval', minutes=5)
-    scheduler.start()
-    
     # In production, let the production server handle the port
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
