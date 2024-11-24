@@ -373,6 +373,13 @@ def get_status():
             'product_count': products_loaded
         })
 
+@app.route('/health_check')
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat()
+    }), 200
+
 @app.route('/search', methods=['POST'])
 @limiter.limit("10 per minute")
 def search():

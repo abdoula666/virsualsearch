@@ -3,7 +3,7 @@ services:
     name: visual-search
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120
     envVars:
       - key: PYTHON_VERSION
         value: 3.8.0
@@ -13,3 +13,9 @@ services:
         sync: false
       - key: CONSUMER_SECRET
         sync: false
+    autoDeploy: true
+    healthCheckPath: /status
+    disk:
+      name: tmp
+      mountPath: /tmp
+      sizeGB: 1

@@ -1,7 +1,7 @@
 flask>=2.2.0,<2.3.0
 flask-cors>=4.0.0
 numpy>=1.22.0
-tensorflow-cpu>=2.13.0
+tensorflow-cpu==2.13.0
 Pillow>=8.3.1
 requests>=2.31.0
 APScheduler>=3.10.1
@@ -10,8 +10,5 @@ opencv-python-headless>=4.5.3.56
 python-dotenv>=1.0.0
 WooCommerce>=3.0.0
 gunicorn>=20.1.0
-boto3>=1.26.0
-botocore>=1.29.0
-aws-cli>=1.27.0
 Flask-Limiter>=3.3.0
 Flask-Talisman>=1.0.0
