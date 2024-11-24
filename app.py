@@ -42,31 +42,45 @@ wcapi = API(
     url=WOOCOMMERCE_URL,
     consumer_key=CONSUMER_KEY,
     consumer_secret=CONSUMER_SECRET,
-    version="wc/v3",  # WooCommerce REST API version
+    version="wc/v3",
     verify_ssl=False,
     query_string_auth=True,
-    wp_api=True,  # Enable WordPress REST API integration
+    wp_api=True,
     timeout=30
 )
 
-# Test WooCommerce connection
 def test_woocommerce_connection():
     """Test the WooCommerce API connection"""
     try:
         logger.info("Testing WooCommerce connection...")
-        # First try to get the store information
-        response = wcapi.get("")
+        logger.info(f"WooCommerce URL: {WOOCOMMERCE_URL}")
         
-        if response.status_code == 200:
+        # Try to get store info first
+        store_response = wcapi.get("")
+        logger.info(f"Store info response status: {store_response.status_code}")
+        logger.info(f"Store info response: {store_response.text[:500]}")
+        
+        # Try to get products
+        products_response = wcapi.get("products")
+        logger.info(f"Products response status: {products_response.status_code}")
+        logger.info(f"Products response: {products_response.text[:500]}")
+        
+        if store_response.status_code == 200 or products_response.status_code == 200:
             logger.info("Successfully connected to WooCommerce API")
             return True
         else:
-            logger.error(f"Failed to connect to WooCommerce. Status code: {response.status_code}")
-            logger.error(f"Response content: \n{response.text[:500]}")
+            logger.error(f"Failed to connect to WooCommerce.")
+            logger.error(f"Store response: {store_response.text[:500]}")
+            logger.error(f"Products response: {products_response.text[:500]}")
             return False
     except Exception as e:
         logger.error(f"Error testing WooCommerce connection: {str(e)}")
         return False
+
+# Test connection immediately
+connection_test = test_woocommerce_connection()
+if not connection_test:
+    logger.error("Initial WooCommerce connection test failed")
 
 # Test connection before starting
 if not test_woocommerce_connection():
@@ -192,14 +206,9 @@ class ProductManager:
             }
             logger.info(f"Requesting products with params: {params}")
             
+            # Try the standard WooCommerce API endpoint first
             response = self.wcapi.get("products", params=params)
-            
-            if not isinstance(response, requests.Response):
-                logger.error("WooCommerce API did not return a Response object")
-                return None
-            
-            logger.info(f"Response Status Code: {response.status_code}")
-            logger.info(f"Response Headers: {response.headers}")
+            logger.info(f"Products API Response Status: {response.status_code}")
             
             if response.status_code == 200:
                 try:
@@ -207,18 +216,44 @@ class ProductManager:
                     if isinstance(products, list):
                         logger.info(f"Successfully fetched {len(products)} products")
                         return products
+                    elif isinstance(products, dict) and 'products' in products:
+                        # Some WooCommerce installations wrap the products in an object
+                        products_list = products['products']
+                        logger.info(f"Successfully fetched {len(products_list)} products from wrapped response")
+                        return products_list
                     else:
-                        logger.error(f"Unexpected response format. Expected list, got: {type(products)}")
-                        logger.error(f"Response content: {products}")
+                        logger.error(f"Unexpected response format: {products}")
                         return None
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse JSON response: {str(e)}")
+                    logger.error(f"Response content: {response.text[:500]}")
+                    return None
+            elif response.status_code == 404:
+                # Try alternative endpoint
+                logger.info("Products endpoint not found, trying alternative endpoint...")
+                response = self.wcapi.get("wp-json/wc/v3/products", params=params)
+                
+                if response.status_code == 200:
+                    try:
+                        products = response.json()
+                        if isinstance(products, list):
+                            logger.info(f"Successfully fetched {len(products)} products from alternative endpoint")
+                            return products
+                        else:
+                            logger.error(f"Unexpected response format from alternative endpoint: {products}")
+                            return None
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON response from alternative endpoint: {str(e)}")
+                        return None
+                else:
+                    logger.error(f"Alternative endpoint failed. Status code: {response.status_code}")
                     logger.error(f"Response content: {response.text[:500]}")
                     return None
             else:
                 logger.error(f"Failed to fetch products. Status code: {response.status_code}")
                 logger.error(f"Response content: {response.text[:500]}")
                 return None
+                
         except Exception as e:
             logger.error(f"Error fetching products: {str(e)}")
             return None
