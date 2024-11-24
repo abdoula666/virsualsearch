@@ -25,14 +25,22 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+# WooCommerce API configuration
+wcapi = API(
+    url=os.environ.get('WOOCOMMERCE_URL'),
+    consumer_key=os.environ.get('CONSUMER_KEY'),
+    consumer_secret=os.environ.get('CONSUMER_SECRET'),
+    version="wc/v3"
+)
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # WooCommerce configuration
-WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL', 'https://cgbshop1.com').rstrip('/')  # Remove trailing slash
-CONSUMER_KEY = os.getenv('CONSUMER_KEY')
-CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
+WOOCOMMERCE_URL = os.environ.get('WOOCOMMERCE_URL').rstrip('/')  # Remove trailing slash
+CONSUMER_KEY = os.environ.get('CONSUMER_KEY')
+CONSUMER_SECRET = os.environ.get('CONSUMER_SECRET')
 
 logger.info(f"Starting API tests with base URL: {WOOCOMMERCE_URL}")
 
@@ -311,8 +319,29 @@ product_manager.check_new_products()  # Load products immediately
 logger.info(f"Initial product load complete. Loaded {len(product_manager.products)} products.")
 
 @app.route('/')
-def index():
+def home():
     return render_template('index.html')
+
+@app.route('/products')
+def get_products():
+    try:
+        # Get products from WooCommerce
+        products = wcapi.get("products").json()
+        return jsonify(products)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/test_connection')
+def test_connection():
+    try:
+        # Test WooCommerce connection
+        response = wcapi.get("products")
+        if response.status_code == 200:
+            return jsonify({"status": "success", "message": "Connected to WooCommerce successfully"})
+        else:
+            return jsonify({"status": "error", "message": f"Connection failed with status code: {response.status_code}"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/status')
 def get_status():

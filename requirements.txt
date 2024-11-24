@@ -10,3 +10,6 @@ opencv-python-headless>=4.5.3.56
 python-dotenv>=1.0.0
 WooCommerce>=3.0.0
 gunicorn>=20.1.0
+boto3>=1.26.0
+botocore>=1.29.0
+aws-cli>=1.27.0

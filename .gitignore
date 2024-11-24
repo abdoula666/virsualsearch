@@ -1,11 +1,18 @@
-# Environment variables
+# Environment variables and secrets
 .env
+.env.*
+*.pem
+credentials.json
+config.json
+.env.local
+.env.*.local
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyc
 .Python
 env/
 build/
@@ -22,8 +29,6 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environment
 venv/
 ENV/
 
