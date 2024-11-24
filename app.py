@@ -18,11 +18,6 @@ import requests
 from base64 import b64encode
 from dotenv import load_dotenv
 from woocommerce import API
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from flask_talisman import Talisman
-from limits.strategies import MovingWindowRateLimiter
-from limits.storage import MemoryStorage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,41 +25,14 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# WooCommerce API configuration
-wcapi = API(
-    url=os.environ.get('WOOCOMMERCE_URL'),
-    consumer_key=os.environ.get('CONSUMER_KEY'),
-    consumer_secret=os.environ.get('CONSUMER_SECRET'),
-    version="wc/v3"
-)
-
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
-# Enable security headers
-Talisman(app, 
-         content_security_policy={
-             'default-src': "'self'",
-             'img-src': "'self' data: https:",
-             'script-src': "'self'"
-         },
-         force_https=True)
-
-# Add rate limiting with memory storage
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    storage_uri="memory://",
-    storage_options={},
-    strategy=MovingWindowRateLimiter,
-    default_limits=["200 per day", "50 per hour"]
-)
-
 # WooCommerce configuration
-WOOCOMMERCE_URL = os.environ.get('WOOCOMMERCE_URL').rstrip('/')  # Remove trailing slash
-CONSUMER_KEY = os.environ.get('CONSUMER_KEY')
-CONSUMER_SECRET = os.environ.get('CONSUMER_SECRET')
+WOOCOMMERCE_URL = os.environ.get('WOOCOMMERCE_URL', '').rstrip('/')  # Remove trailing slash
+CONSUMER_KEY = os.environ.get('CONSUMER_KEY', '')
+CONSUMER_SECRET = os.environ.get('CONSUMER_SECRET', '')
 
 logger.info(f"Starting API tests with base URL: {WOOCOMMERCE_URL}")
 
@@ -386,7 +354,6 @@ def health_check():
     }), 200
 
 @app.route('/search', methods=['POST'])
-@limiter.limit("10 per minute")
 def search():
     if len(product_manager.products) == 0:
         return jsonify({'error': 'Products still loading, please wait'}), 503

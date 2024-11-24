@@ -10,7 +10,3 @@ opencv-python-headless>=4.5.3.56
 python-dotenv>=1.0.0
 WooCommerce>=3.0.0
 gunicorn>=20.1.0
-Flask-Limiter==3.3.0
-Flask-Talisman==1.0.0
-limits>=3.5.0
-redis>=4.5.0
