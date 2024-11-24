@@ -14,6 +14,7 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 from sklearn.preprocessing import normalize
+from sklearn.metrics.pairwise import cosine_similarity
 import requests
 from base64 import b64encode
 from dotenv import load_dotenv
@@ -41,37 +42,27 @@ wcapi = API(
     url=WOOCOMMERCE_URL,
     consumer_key=CONSUMER_KEY,
     consumer_secret=CONSUMER_SECRET,
-    version="wc/v3",  # Updated to match WooCommerce REST API version
+    version="wc/v3",  # WooCommerce REST API version
     verify_ssl=False,
     query_string_auth=True,
+    wp_api=True,  # Enable WordPress REST API integration
     timeout=30
 )
 
 # Test WooCommerce connection
 def test_woocommerce_connection():
+    """Test the WooCommerce API connection"""
     try:
         logger.info("Testing WooCommerce connection...")
-        response = wcapi.get("products", params={"per_page": 1})
-        
-        if not isinstance(response, requests.Response):
-            logger.error("WooCommerce API did not return a Response object")
-            return False
-            
-        logger.info(f"Response Status Code: {response.status_code}")
-        logger.info(f"Response Headers: {response.headers}")
+        # First try to get the store information
+        response = wcapi.get("")
         
         if response.status_code == 200:
-            try:
-                products = response.json()
-                logger.info(f"Successfully parsed JSON response: {products[:100]}")
-                return True
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse JSON response: {str(e)}")
-                logger.error(f"Response content: {response.text[:500]}")
-                return False
+            logger.info("Successfully connected to WooCommerce API")
+            return True
         else:
             logger.error(f"Failed to connect to WooCommerce. Status code: {response.status_code}")
-            logger.error(f"Response content: {response.text[:500]}")
+            logger.error(f"Response content: \n{response.text[:500]}")
             return False
     except Exception as e:
         logger.error(f"Error testing WooCommerce connection: {str(e)}")
@@ -133,6 +124,10 @@ class ProductManager:
         self.wcapi = wcapi
         self.initialization_status = "not_started"
         self.initialization_error = None
+        self.last_check = None
+        self.features = {}
+        self.model = None
+        self.category_weights = {}  # Store category importance weights
         # Immediately load products
         self.initialize()
         
@@ -158,7 +153,7 @@ class ProductManager:
                                 img = Image.open(io.BytesIO(response.content))
                                 feature_vector = extract_features(img)
                                 if feature_vector is not None:
-                                    self.feature_vectors.append(feature_vector)
+                                    self.features[product['id']] = feature_vector
                                     logger.info(f"Processed features for product {product['id']}")
                     except Exception as e:
                         logger.error(f"Error processing product {product.get('id', 'unknown')}: {str(e)}")
@@ -166,6 +161,7 @@ class ProductManager:
                 
                 self.initialization_status = "completed"
                 self.last_update = datetime.now()
+                self.last_check = datetime.now()
             else:
                 self.initialization_status = "failed"
                 self.initialization_error = "Failed to fetch initial products"
@@ -181,10 +177,10 @@ class ProductManager:
             "status": self.initialization_status,
             "error": self.initialization_error,
             "product_count": len(self.products),
-            "feature_count": len(self.feature_vectors),
+            "feature_count": len(self.features),
             "last_update": self.last_update.isoformat() if self.last_update else None
         }
-    
+        
     def fetch_products(self):
         """Fetch products from WooCommerce API"""
         try:
@@ -226,94 +222,45 @@ class ProductManager:
         except Exception as e:
             logger.error(f"Error fetching products: {str(e)}")
             return None
-
-# Initialize ResNet model with custom top layer
-base_model = ResNet50(weights='imagenet', include_top=False)
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-feature_extractor = tf.keras.Model(inputs=base_model.input, outputs=x)
-
-def extract_features(img):
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array = preprocess_input(img_array)
-    features = feature_extractor.predict(img_array, verbose=0)
-    return features.flatten()
-
-class ProductManager:
-    def __init__(self):
-        self.last_check = None
-        self.products = []
-        self.features = {}
-        self.model = None
-        self.scheduler = BackgroundScheduler()
-        self.scheduler.start()
-        self.category_weights = {}  # Store category importance weights
-    
+            
     def check_new_products(self):
+        """Check for new products and update the local cache"""
         try:
-            logger.info("Starting to fetch products from WooCommerce...")
-            params = {
-                'per_page': 100,
-                'status': 'publish',  # Only get published products
-                'orderby': 'date',
-                'order': 'desc'
-            }
+            logger.info("Checking for new products...")
             
-            if self.last_check:
-                params['after'] = self.last_check.isoformat()
+            # Fetch new products
+            new_products = self.fetch_products()
             
-            logger.info(f"Requesting products with params: {params}")
-            response = self.fetch_products()
-            
-            if response:
-                new_products = response
-                logger.info(f"Fetched {len(new_products)} products from WooCommerce")
+            if new_products:
+                # Update products list
+                self.products = new_products
+                logger.info(f"Updated products list with {len(new_products)} products")
                 
-                if new_products:
-                    for product in new_products:
-                        if 'id' not in product:
-                            logger.warning(f"Product missing ID: {product}")
+                # Process new products
+                for product in new_products:
+                    if product['id'] not in self.features:
+                        try:
+                            if product.get('images') and len(product['images']) > 0:
+                                image_url = product['images'][0]['src']
+                                response = requests.get(image_url, verify=False)
+                                if response.status_code == 200:
+                                    img = Image.open(io.BytesIO(response.content))
+                                    feature_vector = extract_features(img)
+                                    if feature_vector is not None:
+                                        self.features[product['id']] = feature_vector
+                                        logger.info(f"Processed features for new product {product['id']}")
+                        except Exception as e:
+                            logger.error(f"Error processing new product {product.get('id', 'unknown')}: {str(e)}")
                             continue
-                            
-                        if product['id'] not in [p['id'] for p in self.products]:
-                            try:
-                                product_data = {
-                                    'id': product['id'],
-                                    'name': product.get('name', 'Unnamed Product'),
-                                    'price': product.get('price', '0.00'),
-                                    'image_path': product['images'][0]['src'] if product.get('images') else None,
-                                    'product_url': product.get('permalink', ''),
-                                    'categories': [cat['name'] for cat in product.get('categories', [])],
-                                    'attributes': product.get('attributes', [])
-                                }
-                                
-                                if product_data['image_path']:
-                                    logger.info(f"Adding product: {product_data['name']} (ID: {product_data['id']})")
-                                    self.products.append(product_data)
-                                else:
-                                    logger.warning(f"Skipping product {product_data['id']} - No image available")
-                            except Exception as e:
-                                logger.error(f"Error processing product {product.get('id', 'unknown')}: {str(e)}")
-                                continue
-                    
-                    if self.products:
-                        logger.info("Updating features for new products...")
-                        self.update_features()
-                        logger.info("Updating category weights...")
-                        self.update_category_weights()
-                        logger.info(f"Product updates completed. Total products: {len(self.products)}")
-                    else:
-                        logger.warning("No valid products found to process")
-                else:
-                    logger.info("No new products found")
                 
                 self.last_check = datetime.now()
+                logger.info("Successfully updated products and features")
             else:
-                logger.error(f"Failed to fetch products.")
+                logger.error("Failed to fetch new products")
+                
         except Exception as e:
-            logger.error(f"Error checking for new products: {str(e)}", exc_info=True)
-    
+            logger.error(f"Error checking for new products: {str(e)}")
+            
     def update_category_weights(self):
         """Update category importance weights based on product distribution"""
         category_counts = {}
@@ -350,6 +297,19 @@ class ProductManager:
                     
                 except Exception as e:
                     logger.error(f"Error processing image for product {product['id']}: {str(e)}")
+
+# Initialize ResNet model with custom top layer
+base_model = ResNet50(weights='imagenet', include_top=False)
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+feature_extractor = tf.keras.Model(inputs=base_model.input, outputs=x)
+
+def extract_features(img):
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)
+    features = feature_extractor.predict(img_array, verbose=0)
+    return features.flatten()
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -450,80 +410,67 @@ def health_check():
 
 @app.route('/search', methods=['POST'])
 def search():
-    # Check initialization status
-    if product_manager.initialization_status != "completed":
-        status = product_manager.get_initialization_status()
-        return jsonify({
-            'error': 'Products still loading or initialization failed',
-            'status': status
-        }), 503
-    
-    if len(product_manager.products) == 0:
-        return jsonify({'error': 'No products available'}), 503
-
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-
+    """Search for products using an uploaded image"""
     try:
-        # Get category filter from request if provided
-        category_filter = request.form.get('category', None)
+        if not product_manager.products:
+            return jsonify({
+                'error': 'Product database is empty',
+                'status': product_manager.get_initialization_status()
+            }), 503
         
-        # Process uploaded image
-        image_bytes = file.read()
-        img = Image.open(io.BytesIO(image_bytes))
-        img = img.convert('RGB')
-        img = img.resize((224, 224))
-        img_array = image.img_to_array(img)
-        img_array = np.expand_dims(img_array, axis=0)
-        img_array = preprocess_input(img_array)
-        
-        # Extract and normalize query features
-        query_features = feature_extractor.predict(img_array, verbose=0)
-        query_features = normalize(query_features).flatten()
-        
-        # Calculate similarities with improved scoring
-        similarities = []
-        for product in product_manager.products:
-            if product['id'] in product_manager.features:
-                similarity = calculate_similarity_score(
-                    query_features,
-                    product_manager.features[product['id']],
-                    product['categories'],
-                    category_filter
-                )
-                similarities.append((similarity, product))
-        
-        # Sort by similarity and get top results
-        similarities.sort(key=lambda x: x[0], reverse=True)
-        top_results = similarities[:30]
-        
-        # Format results
-        results = []
-        for _, product in top_results:
-            try:
-                price_value = float(product['price'])
-                formatted_price = '{:,.0f}'.format(price_value).replace(',', ' ')
-                price_display = f"{formatted_price} FCFA"
-            except (ValueError, TypeError):
-                price_display = product['price']
-
-            results.append({
-                'name': product['name'],
-                'price': price_display,
-                'image_path': product['image_path'],
-                'product_url': product['product_url'],
-                'categories': product['categories']
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image file provided'}), 400
+            
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+            
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type'}), 400
+            
+        try:
+            # Process the uploaded image
+            img = Image.open(file.stream)
+            query_features = extract_features(img)
+            
+            # Calculate similarities
+            similarities = []
+            for product in product_manager.products:
+                if product['id'] in product_manager.features:
+                    product_features = product_manager.features[product['id']]
+                    similarity = cosine_similarity([query_features], [product_features])[0][0]
+                    similarities.append((similarity, product))
+            
+            # Sort by similarity
+            similarities.sort(reverse=True)
+            
+            # Return top 10 results
+            results = []
+            for similarity, product in similarities[:10]:
+                result = {
+                    'id': product['id'],
+                    'name': product.get('name', 'Unknown'),
+                    'similarity': float(similarity),
+                    'image_url': product['images'][0]['src'] if product.get('images') else None,
+                    'product_url': product.get('permalink'),
+                    'price': product.get('price', '0.00'),
+                    'categories': [cat['name'] for cat in product.get('categories', [])]
+                }
+                results.append(result)
+            
+            return jsonify({
+                'results': results,
+                'total_products': len(product_manager.products),
+                'processed_products': len(similarities)
             })
-        
-        return jsonify({'results': results})
-
+            
+        except Exception as e:
+            logger.error(f"Error processing search: {str(e)}")
+            return jsonify({'error': 'Error processing image search'}), 500
+            
     except Exception as e:
-        logger.error(f"Error processing search: {str(e)}")
-        return jsonify({'error': 'Error processing image'}), 500
+        logger.error(f"Error in search endpoint: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 def calculate_similarity_score(query_features, product_features, product_categories, query_category=None):
     """Calculate weighted similarity score considering visual features and categories"""
