@@ -1,0 +1,12 @@
+2024-11-26 00:24:53.173823: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2024-11-26 00:24:54.279619: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2024-11-26 00:24:57.603803: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "ProductManager.check_new_products" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:__main__:Checked for new products at 2024-11-26 00:27:13.196861
+INFO:waitress:Serving on http://0.0.0.0:59106
+INFO:apscheduler.executors.default:Running job "ProductManager.check_new_products (trigger: interval[0:05:00], next run at: 2024-11-26 00:29:58 CST)" (scheduled at 2024-11-26 00:29:58.922318+08:00)
+INFO:__main__:Checked for new products at 2024-11-26 00:30:00.650648
+INFO:apscheduler.executors.default:Job "ProductManager.check_new_products (trigger: interval[0:05:00], next run at: 2024-11-26 00:34:58 CST)" executed successfully
