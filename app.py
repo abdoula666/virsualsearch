@@ -46,6 +46,7 @@ ALLOWED_ORIGINS = [
     'http://localhost:59106',
     'http://127.0.0.1:59106',
     'http://192.168.21.2:59106',
+<<<<<<< HEAD
     'https://cgbshop1.com'
 ]
 
@@ -56,6 +57,15 @@ cors = CORS(app, resources={
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
+=======
+    'https://cgbshop1.com',
+    'http://34.204.8.40',
+    'http://ec2-34-204-8-40.compute-1.amazonaws.com',
+    '*'  # Allow all origins when using public server
+]
+
+cors = CORS(app, origins=ALLOWED_ORIGINS)
+>>>>>>> cf967bfa3abd668c28d4d5e380ac46a1635f8e54
 
 def require_api_key(f):
     @wraps(f)
