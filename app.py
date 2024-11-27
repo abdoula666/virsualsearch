@@ -19,12 +19,24 @@ from base64 import b64encode
 from waitress import serve
 from functools import wraps
 import secrets
+import tempfile
+import pathlib
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+if os.environ.get('RENDER'):
+    UPLOAD_FOLDER = tempfile.gettempdir()
+else:
+    UPLOAD_FOLDER = 'uploads'
+
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # WooCommerce API Configuration
 WOOCOMMERCE_URL = "https://cgbshop1.com/wp-json/wc/v3"
