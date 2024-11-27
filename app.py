@@ -115,10 +115,13 @@ class ProductManager:
         self.scheduler.start()
         self.category_weights = {}
         self.processing_lock = threading.Lock()
-
+        # Initialize products immediately
+        self.check_new_products()
+        
     def check_new_products(self):
         with self.processing_lock:
             try:
+                logger.info("Checking for new products...")
                 params = {
                     'per_page': 100,
                     'orderby': 'modified',
@@ -128,11 +131,13 @@ class ProductManager:
                 response = requests.get(
                     f"{WOOCOMMERCE_URL}/products",
                     params=params,
-                    auth=(CONSUMER_KEY, CONSUMER_SECRET)
+                    auth=(CONSUMER_KEY, CONSUMER_SECRET),
+                    timeout=30  # Add timeout
                 )
                 
                 if response.status_code == 200:
                     new_products = response.json()
+                    logger.info(f"Found {len(new_products)} products")
                     if new_products:
                         # Track current product IDs
                         current_ids = set()
@@ -150,34 +155,46 @@ class ProductManager:
                                 'attributes': product.get('attributes', [])
                             }
                             
-                            # Update or add product
-                            found = False
-                            for i, p in enumerate(self.products):
-                                if p['id'] == product['id']:
-                                    found = True
-                                    if p != product_data:  # If product data changed
-                                        self.products[i] = product_data
-                                        if product['id'] in self.features:
-                                            del self.features[product['id']]
-                                        updated = True
-                                    break
-                            
-                            if not found:  # New product
+                            # Check if we need to update this product
+                            existing_product = next((p for p in self.products if p['id'] == product['id']), None)
+                            if not existing_product:
                                 self.products.append(product_data)
                                 updated = True
+                                logger.info(f"Added new product: {product_data['name']}")
+                            
+                            # Update features if needed
+                            if product['id'] not in self.features and product_data['image_path']:
+                                try:
+                                    # Download and process image
+                                    img_response = requests.get(product_data['image_path'])
+                                    if img_response.status_code == 200:
+                                        img = Image.open(io.BytesIO(img_response.content))
+                                        img = img.convert('RGB')
+                                        img = img.resize((224, 224))
+                                        img_array = image.img_to_array(img)
+                                        img_array = np.expand_dims(img_array, axis=0)
+                                        img_array = preprocess_input(img_array)
+                                        
+                                        # Extract features
+                                        features = feature_extractor.predict(img_array)
+                                        self.features[product['id']] = features.flatten()
+                                        updated = True
+                                        logger.info(f"Extracted features for product: {product_data['name']}")
+                                except Exception as e:
+                                    logger.error(f"Error processing image for product {product_data['name']}: {str(e)}")
                         
-                        # Remove deleted products
+                        # Remove products that no longer exist
                         self.products = [p for p in self.products if p['id'] in current_ids]
-                        self.features = {k: v for k, v in self.features.items() if k in current_ids}
                         
                         if updated:
-                            self.update_features()
                             self.update_category_weights()
-                            logger.info(f"Products updated at {datetime.now()}")
-                
+                            logger.info("Updated category weights")
+                else:
+                    logger.error(f"Failed to fetch products. Status code: {response.status_code}")
+                    
             except Exception as e:
-                logger.error(f"Error checking for new products: {str(e)}")
-
+                logger.error(f"Error in check_new_products: {str(e)}")
+                
     def update_category_weights(self):
         """Update category importance weights based on product distribution"""
         category_counts = {}
@@ -244,14 +261,13 @@ def index():
 
 @app.route('/status')
 def get_status():
-    with threading.Lock():
-        products_loaded = len(product_manager.products)
-        features_loaded = len(product_manager.features)
-        is_ready = products_loaded > 0 and products_loaded == features_loaded
-        return jsonify({
-            'ready': is_ready,
-            'product_count': products_loaded
-        })
+    """Get the current status of the product database"""
+    return jsonify({
+        'total_products': len(product_manager.products),
+        'products_with_features': len(product_manager.features),
+        'categories': list(product_manager.category_weights.keys()),
+        'last_check': str(product_manager.last_check) if product_manager.last_check else None
+    })
 
 @app.route('/search', methods=['POST'])
 @require_api_key
