@@ -10,4 +10,14 @@ services:
         value: 3.8
       - key: PORT
         value: 10000
+      - key: WOOCOMMERCE_BASE_URL
+        sync: false
+      - key: WOOCOMMERCE_CONSUMER_KEY
+        sync: false
+      - key: WOOCOMMERCE_CONSUMER_SECRET
+        sync: false
+      - key: API_KEY
+        generateValue: true
+      - key: RENDER
+        value: true
     autoDeploy: true

@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import os
+from dotenv import load_dotenv
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image
@@ -22,6 +23,9 @@ import secrets
 import tempfile
 import pathlib
 
+# Load environment variables
+load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -42,26 +46,22 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # WooCommerce API Configuration
-WOOCOMMERCE_URL = "https://cgbshop1.com/wp-json/wc/v3"
-CONSUMER_KEY = "ck_da1507a982310e8a29d704df57b4e886b26d528a"
-CONSUMER_SECRET = "cs_2917aeffff79c6bb2427849b617f0c992959f301"
+WOOCOMMERCE_BASE_URL = os.getenv('WOOCOMMERCE_BASE_URL', 'https://cgbshop1.com')
+WOOCOMMERCE_API_URL = f"{WOOCOMMERCE_BASE_URL}/wp-json/wc/v3"
+CONSUMER_KEY = os.getenv('WOOCOMMERCE_CONSUMER_KEY')
+CONSUMER_SECRET = os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
 
-# Generate a secure API key if it doesn't exist
-API_KEY_FILE = "api_key.txt"
-if not os.path.exists(API_KEY_FILE):
-    API_KEY = secrets.token_urlsafe(32)
-    with open(API_KEY_FILE, "w") as f:
-        f.write(API_KEY)
-else:
-    with open(API_KEY_FILE, "r") as f:
-        API_KEY = f.read().strip()
+if not all([WOOCOMMERCE_BASE_URL, CONSUMER_KEY, CONSUMER_SECRET]):
+    logger.error("Missing required WooCommerce configuration. Please check your .env file.")
+    raise ValueError("Missing required WooCommerce configuration")
 
 # Security configuration
 ALLOWED_ORIGINS = [
     'http://localhost:59106',
     'http://127.0.0.1:59106',
     'http://192.168.21.2:59106',
-    'https://cgbshop1.com'
+    'https://cgbshop1.com',
+    'https://visual-search-3gq1.onrender.com'
 ]
 
 cors = CORS(app, resources={
@@ -82,7 +82,7 @@ def require_api_key(f):
         if api_key and api_key.startswith('Bearer '):
             api_key = api_key.split('Bearer ')[1]
         
-        if not api_key or api_key != API_KEY:
+        if not api_key or api_key != os.getenv('API_KEY'):
             return jsonify({'error': 'Invalid or missing API key'}), 401
         
         return f(*args, **kwargs)
@@ -121,110 +121,116 @@ class ProductManager:
         logger.info("ProductManager initialized")
 
     def check_new_products(self):
-        with self.processing_lock:
-            try:
+        """Check for new products and update the database"""
+        try:
+            with self.processing_lock:
                 logger.info("Starting product check...")
                 
                 # Test API connection first
-                test_response = requests.get(
-                    f"{WOOCOMMERCE_URL}/products/categories",
-                    auth=(CONSUMER_KEY, CONSUMER_SECRET),
-                    timeout=10
-                )
-                
-                if test_response.status_code != 200:
-                    logger.error(f"API connection test failed: {test_response.status_code}")
+                try:
+                    test_url = f"{WOOCOMMERCE_API_URL}/products/categories"
+                    test_response = requests.get(
+                        test_url,
+                        auth=(CONSUMER_KEY, CONSUMER_SECRET),
+                        timeout=10,
+                        verify=True
+                    )
+                    test_response.raise_for_status()
+                    logger.info("API connection successful")
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"API connection test failed: {str(e)}")
                     return
-                
-                logger.info("API connection successful")
                 
                 params = {
                     'per_page': 100,
-                    'orderby': 'modified',
+                    'status': 'publish',
+                    'orderby': 'date',
                     'order': 'desc'
                 }
                 
+                url = f"{WOOCOMMERCE_API_URL}/products"
                 response = requests.get(
-                    f"{WOOCOMMERCE_URL}/products",
+                    url,
                     params=params,
                     auth=(CONSUMER_KEY, CONSUMER_SECRET),
-                    timeout=30
+                    timeout=30,
+                    verify=True
                 )
+                response.raise_for_status()
                 
-                if response.status_code == 200:
-                    new_products = response.json()
-                    logger.info(f"Retrieved {len(new_products)} products from API")
-                    
-                    if new_products:
-                        current_ids = set()
-                        updated = False
+                products = response.json()
+                if not products:
+                    logger.warning("No products found")
+                    return
+                
+                logger.info(f"Retrieved {len(products)} products from API")
+                
+                current_ids = set()
+                updated = False
+                
+                for product in products:
+                    try:
+                        current_ids.add(product['id'])
                         
-                        for product in new_products:
-                            try:
-                                current_ids.add(product['id'])
-                                
-                                if not product.get('images'):
-                                    logger.warning(f"Product {product['id']} has no images")
-                                    continue
-                                    
-                                product_data = {
-                                    'id': product['id'],
-                                    'name': product['name'],
-                                    'price': product['price'],
-                                    'image_path': product['images'][0]['src'],
-                                    'product_url': product['permalink'],
-                                    'categories': [cat['name'] for cat in product.get('categories', [])],
-                                    'attributes': product.get('attributes', [])
-                                }
-                                
-                                # Add or update product
-                                if product['id'] not in [p['id'] for p in self.products]:
-                                    self.products.append(product_data)
-                                    updated = True
-                                    logger.info(f"Added new product: {product_data['name']}")
-                                
-                                # Update features if needed
-                                if product['id'] not in self.features:
-                                    try:
-                                        img_response = requests.get(product_data['image_path'], timeout=10)
-                                        if img_response.status_code == 200:
-                                            img = Image.open(io.BytesIO(img_response.content))
-                                            img = img.convert('RGB')
-                                            img = img.resize((224, 224))
-                                            img_array = image.img_to_array(img)
-                                            img_array = np.expand_dims(img_array, axis=0)
-                                            img_array = preprocess_input(img_array)
-                                            
-                                            features = feature_extractor.predict(img_array)
-                                            self.features[product['id']] = features.flatten()
-                                            logger.info(f"Extracted features for product: {product_data['name']}")
-                                        else:
-                                            logger.error(f"Failed to download image for product {product_data['name']}")
-                                    except Exception as e:
-                                        logger.error(f"Error processing image for {product_data['name']}: {str(e)}")
+                        if not product.get('images'):
+                            logger.warning(f"Product {product['id']} has no images")
+                            continue
                             
+                        product_data = {
+                            'id': product['id'],
+                            'name': product['name'],
+                            'price': product['price'],
+                            'image_path': product['images'][0]['src'],
+                            'product_url': product['permalink'],
+                            'categories': [cat['name'] for cat in product.get('categories', [])],
+                            'attributes': product.get('attributes', [])
+                        }
+                        
+                        # Add or update product
+                        if product['id'] not in [p['id'] for p in self.products]:
+                            self.products.append(product_data)
+                            updated = True
+                            logger.info(f"Added new product: {product_data['name']}")
+                        
+                        # Update features if needed
+                        if product['id'] not in self.features:
+                            try:
+                                img_response = requests.get(
+                                    product_data['image_path'],
+                                    timeout=10,
+                                    verify=True
+                                )
+                                img_response.raise_for_status()
+                                
+                                img = Image.open(io.BytesIO(img_response.content))
+                                img = img.convert('RGB')
+                                img = img.resize((224, 224))
+                                img_array = image.img_to_array(img)
+                                img_array = np.expand_dims(img_array, axis=0)
+                                img_array = preprocess_input(img_array)
+                                
+                                features = feature_extractor.predict(img_array)
+                                self.features[product['id']] = features.flatten()
+                                logger.info(f"Extracted features for product: {product_data['name']}")
                             except Exception as e:
-                                logger.error(f"Error processing product: {str(e)}")
-                                continue
-                        
-                        # Clean up old products
-                        self.products = [p for p in self.products if p['id'] in current_ids]
-                        self.features = {k: v for k, v in self.features.items() if k in current_ids}
-                        
-                        if updated:
-                            self.update_category_weights()
-                            logger.info(f"Updated category weights. Total products: {len(self.products)}")
-                        
-                        self.last_check = datetime.now()
-                    else:
-                        logger.warning("No products returned from API")
-                else:
-                    logger.error(f"Failed to fetch products. Status: {response.status_code}")
-            
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Network error during product check: {str(e)}")
-            except Exception as e:
-                logger.error(f"Unexpected error in check_new_products: {str(e)}", exc_info=True)
+                                logger.error(f"Error processing image for {product_data['name']}: {str(e)}")
+                    
+                    except Exception as e:
+                        logger.error(f"Error processing product: {str(e)}")
+                        continue
+                
+                # Clean up old products
+                self.products = [p for p in self.products if p['id'] in current_ids]
+                self.features = {k: v for k, v in self.features.items() if k in current_ids}
+                
+                if updated:
+                    self.update_category_weights()
+                    logger.info(f"Updated category weights. Total products: {len(self.products)}")
+                
+                self.last_check = datetime.now()
+        
+        except Exception as e:
+            logger.error(f"Unexpected error in check_new_products: {str(e)}", exc_info=True)
 
     def update_category_weights(self):
         """Update category importance weights based on product distribution"""
@@ -286,9 +292,7 @@ def calculate_similarity_score(query_features, product_features, product_categor
 
 @app.route('/')
 def index():
-    with open('api_key.txt', 'r') as f:
-        api_key = f.read().strip()
-    return render_template('standalone.html', api_key=api_key)
+    return render_template('standalone.html', api_key=os.getenv('API_KEY'))
 
 @app.route('/status')
 def get_status():
@@ -393,7 +397,7 @@ def product_webhook():
         
         # Fetch the specific product
         response = requests.get(
-            f"{WOOCOMMERCE_URL}/products/{product_id}",
+            f"{WOOCOMMERCE_API_URL}/products/{product_id}",
             auth=(CONSUMER_KEY, CONSUMER_SECRET)
         )
         
