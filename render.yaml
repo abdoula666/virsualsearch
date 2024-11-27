@@ -3,21 +3,7 @@ services:
     name: visual-search
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:10000 --workers 4 --timeout 120
+    startCommand: gunicorn app:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.8.0
-      - key: PORT
-        value: 10000
-      - key: WOOCOMMERCE_URL
-        sync: false
-      - key: CONSUMER_KEY
-        sync: false
-      - key: CONSUMER_SECRET
-        sync: false
-    autoDeploy: true
-    healthCheckPath: /status
-    disk:
-      name: tmp
-      mountPath: /tmp
-      sizeGB: 1
+        value: 3.11.0
