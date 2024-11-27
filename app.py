@@ -22,7 +22,10 @@ import secrets
 import tempfile
 import pathlib
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -58,7 +61,6 @@ ALLOWED_ORIGINS = [
     'http://localhost:59106',
     'http://127.0.0.1:59106',
     'http://192.168.21.2:59106',
-<<<<<<< HEAD
     'https://cgbshop1.com'
 ]
 
@@ -69,15 +71,6 @@ cors = CORS(app, resources={
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
-=======
-    'https://cgbshop1.com',
-    'http://34.204.8.40',
-    'http://ec2-34-204-8-40.compute-1.amazonaws.com',
-    '*'  # Allow all origins when using public server
-}
-
-cors = CORS(app, origins=ALLOWED_ORIGINS)
->>>>>>> cf967bfa3abd668c28d4d5e380ac46a1635f8e54
 
 def require_api_key(f):
     @wraps(f)
@@ -97,6 +90,11 @@ def require_api_key(f):
 
 app.before_request(require_api_key)
 
+@app.errorhandler(Exception)
+def handle_error(error):
+    logger.error(f"Unhandled error: {str(error)}", exc_info=True)
+    return jsonify({'error': str(error)}), 500
+
 # Initialize ResNet model with custom top layer
 base_model = ResNet50(weights='imagenet', include_top=False)
 x = base_model.output
@@ -110,18 +108,36 @@ class ProductManager:
         self.features = {}
         self.model = None
         self.scheduler = BackgroundScheduler()
-        # Check every 30 seconds
-        self.scheduler.add_job(self.check_new_products, 'interval', seconds=30)
-        self.scheduler.start()
         self.category_weights = {}
         self.processing_lock = threading.Lock()
-        # Initialize products immediately
-        self.check_new_products()
         
+        # Initialize immediately but don't block
+        threading.Thread(target=self.check_new_products).start()
+        
+        # Start scheduler after initial load
+        self.scheduler.add_job(self.check_new_products, 'interval', seconds=30)
+        self.scheduler.start()
+        
+        logger.info("ProductManager initialized")
+
     def check_new_products(self):
         with self.processing_lock:
             try:
-                logger.info("Checking for new products...")
+                logger.info("Starting product check...")
+                
+                # Test API connection first
+                test_response = requests.get(
+                    f"{WOOCOMMERCE_URL}/products/categories",
+                    auth=(CONSUMER_KEY, CONSUMER_SECRET),
+                    timeout=10
+                )
+                
+                if test_response.status_code != 200:
+                    logger.error(f"API connection test failed: {test_response.status_code}")
+                    return
+                
+                logger.info("API connection successful")
+                
                 params = {
                     'per_page': 100,
                     'orderby': 'modified',
@@ -132,69 +148,84 @@ class ProductManager:
                     f"{WOOCOMMERCE_URL}/products",
                     params=params,
                     auth=(CONSUMER_KEY, CONSUMER_SECRET),
-                    timeout=30  # Add timeout
+                    timeout=30
                 )
                 
                 if response.status_code == 200:
                     new_products = response.json()
-                    logger.info(f"Found {len(new_products)} products")
+                    logger.info(f"Retrieved {len(new_products)} products from API")
+                    
                     if new_products:
-                        # Track current product IDs
                         current_ids = set()
                         updated = False
                         
                         for product in new_products:
-                            current_ids.add(product['id'])
-                            product_data = {
-                                'id': product['id'],
-                                'name': product['name'],
-                                'price': product['price'],
-                                'image_path': product['images'][0]['src'] if product['images'] else None,
-                                'product_url': product['permalink'],
-                                'categories': [cat['name'] for cat in product.get('categories', [])],
-                                'attributes': product.get('attributes', [])
-                            }
+                            try:
+                                current_ids.add(product['id'])
+                                
+                                if not product.get('images'):
+                                    logger.warning(f"Product {product['id']} has no images")
+                                    continue
+                                    
+                                product_data = {
+                                    'id': product['id'],
+                                    'name': product['name'],
+                                    'price': product['price'],
+                                    'image_path': product['images'][0]['src'],
+                                    'product_url': product['permalink'],
+                                    'categories': [cat['name'] for cat in product.get('categories', [])],
+                                    'attributes': product.get('attributes', [])
+                                }
+                                
+                                # Add or update product
+                                if product['id'] not in [p['id'] for p in self.products]:
+                                    self.products.append(product_data)
+                                    updated = True
+                                    logger.info(f"Added new product: {product_data['name']}")
+                                
+                                # Update features if needed
+                                if product['id'] not in self.features:
+                                    try:
+                                        img_response = requests.get(product_data['image_path'], timeout=10)
+                                        if img_response.status_code == 200:
+                                            img = Image.open(io.BytesIO(img_response.content))
+                                            img = img.convert('RGB')
+                                            img = img.resize((224, 224))
+                                            img_array = image.img_to_array(img)
+                                            img_array = np.expand_dims(img_array, axis=0)
+                                            img_array = preprocess_input(img_array)
+                                            
+                                            features = feature_extractor.predict(img_array)
+                                            self.features[product['id']] = features.flatten()
+                                            logger.info(f"Extracted features for product: {product_data['name']}")
+                                        else:
+                                            logger.error(f"Failed to download image for product {product_data['name']}")
+                                    except Exception as e:
+                                        logger.error(f"Error processing image for {product_data['name']}: {str(e)}")
                             
-                            # Check if we need to update this product
-                            existing_product = next((p for p in self.products if p['id'] == product['id']), None)
-                            if not existing_product:
-                                self.products.append(product_data)
-                                updated = True
-                                logger.info(f"Added new product: {product_data['name']}")
-                            
-                            # Update features if needed
-                            if product['id'] not in self.features and product_data['image_path']:
-                                try:
-                                    # Download and process image
-                                    img_response = requests.get(product_data['image_path'])
-                                    if img_response.status_code == 200:
-                                        img = Image.open(io.BytesIO(img_response.content))
-                                        img = img.convert('RGB')
-                                        img = img.resize((224, 224))
-                                        img_array = image.img_to_array(img)
-                                        img_array = np.expand_dims(img_array, axis=0)
-                                        img_array = preprocess_input(img_array)
-                                        
-                                        # Extract features
-                                        features = feature_extractor.predict(img_array)
-                                        self.features[product['id']] = features.flatten()
-                                        updated = True
-                                        logger.info(f"Extracted features for product: {product_data['name']}")
-                                except Exception as e:
-                                    logger.error(f"Error processing image for product {product_data['name']}: {str(e)}")
+                            except Exception as e:
+                                logger.error(f"Error processing product: {str(e)}")
+                                continue
                         
-                        # Remove products that no longer exist
+                        # Clean up old products
                         self.products = [p for p in self.products if p['id'] in current_ids]
+                        self.features = {k: v for k, v in self.features.items() if k in current_ids}
                         
                         if updated:
                             self.update_category_weights()
-                            logger.info("Updated category weights")
+                            logger.info(f"Updated category weights. Total products: {len(self.products)}")
+                        
+                        self.last_check = datetime.now()
+                    else:
+                        logger.warning("No products returned from API")
                 else:
-                    logger.error(f"Failed to fetch products. Status code: {response.status_code}")
-                    
+                    logger.error(f"Failed to fetch products. Status: {response.status_code}")
+            
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Network error during product check: {str(e)}")
             except Exception as e:
-                logger.error(f"Error in check_new_products: {str(e)}")
-                
+                logger.error(f"Unexpected error in check_new_products: {str(e)}", exc_info=True)
+
     def update_category_weights(self):
         """Update category importance weights based on product distribution"""
         category_counts = {}
@@ -208,7 +239,7 @@ class ProductManager:
         # Calculate inverse frequency weights
         for category, count in category_counts.items():
             self.category_weights[category] = np.log(total_products / (count + 1))
-    
+
     def update_features(self):
         if not self.model:
             self.model = feature_extractor
@@ -273,71 +304,79 @@ def get_status():
 @require_api_key
 def search():
     if len(product_manager.products) == 0:
-        return jsonify({'error': 'Products still loading, please wait'}), 503
+        logger.warning("Search attempted but no products are loaded")
+        return jsonify({
+            'error': 'Product database is empty',
+            'status': {
+                'total_products': len(product_manager.products),
+                'products_with_features': len(product_manager.features),
+                'last_check': str(product_manager.last_check) if product_manager.last_check else None
+            }
+        }), 503
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
+    if 'image' not in request.files:
+        logger.error("No image file in request")
+        return jsonify({'error': 'No image file provided'}), 400
 
-    file = request.files['file']
+    file = request.files['image']
     if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
+        logger.error("Empty filename in request")
+        return jsonify({'error': 'No selected file'}), 400
 
     try:
-        # Get category filter from request if provided
-        category_filter = request.form.get('category', None)
-        
-        # Process uploaded image
-        image_bytes = file.read()
-        img = Image.open(io.BytesIO(image_bytes))
+        # Process the uploaded image
+        img = Image.open(file.stream)
         img = img.convert('RGB')
         img = img.resize((224, 224))
         img_array = image.img_to_array(img)
         img_array = np.expand_dims(img_array, axis=0)
         img_array = preprocess_input(img_array)
-        
-        # Extract and normalize query features
-        query_features = feature_extractor.predict(img_array, verbose=0)
-        query_features = normalize(query_features).flatten()
-        
-        # Calculate similarities with improved scoring
-        similarities = []
+
+        # Extract features
+        query_features = feature_extractor.predict(img_array).flatten()
+
+        # Get query category if provided
+        query_category = request.form.get('category', None)
+
+        # Calculate similarities and sort products
+        results = []
         for product in product_manager.products:
             if product['id'] in product_manager.features:
                 similarity = calculate_similarity_score(
                     query_features,
                     product_manager.features[product['id']],
-                    product['categories'],
-                    category_filter
+                    product.get('categories', []),
+                    query_category
                 )
-                similarities.append((similarity, product))
-        
-        # Sort by similarity and get top results
-        similarities.sort(key=lambda x: x[0], reverse=True)
-        top_results = similarities[:30]
-        
-        # Format results
-        results = []
-        for _, product in top_results:
-            try:
-                price_value = float(product['price'])
-                formatted_price = '{:,.0f}'.format(price_value).replace(',', ' ')
-                price_display = f"{formatted_price} FCFA"
-            except (ValueError, TypeError):
-                price_display = product['price']
+                results.append({
+                    'product': product,
+                    'similarity': float(similarity)
+                })
 
-            results.append({
-                'name': product['name'],
-                'price': price_display,
-                'image_path': product['image_path'],
-                'product_url': product['product_url'],
-                'categories': product['categories']
-            })
+        # Sort by similarity
+        results.sort(key=lambda x: x['similarity'], reverse=True)
         
-        return jsonify({'results': results})
+        logger.info(f"Search completed successfully. Found {len(results)} matches")
+        
+        return jsonify({
+            'results': results[:10],  # Return top 10 results
+            'total_matches': len(results),
+            'status': {
+                'total_products': len(product_manager.products),
+                'products_with_features': len(product_manager.features)
+            }
+        })
 
     except Exception as e:
-        logger.error(f"Error processing search: {str(e)}")
-        return jsonify({'error': 'Error processing image'}), 500
+        logger.error(f"Error processing search request: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Error processing image',
+            'details': str(e),
+            'status': {
+                'total_products': len(product_manager.products),
+                'products_with_features': len(product_manager.features)
+            }
+        }), 500
 
 @app.route('/webhook/product-update', methods=['POST'])
 @require_api_key
