@@ -1,7 +1,8 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
 env/
 build/
@@ -19,7 +20,28 @@ var/
 .installed.cfg
 *.egg
 .env
+
+# Virtual Environment
 venv/
 .venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+uploads/
 *.log
+*.pkl
+aws_key.pem
+chat.pem
+*.pem
+server_status.log
+server_log.txt
+
+# OS specific
 .DS_Store
+Thumbs.db

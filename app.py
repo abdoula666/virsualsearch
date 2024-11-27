@@ -62,7 +62,7 @@ cors = CORS(app, resources={
     'http://34.204.8.40',
     'http://ec2-34-204-8-40.compute-1.amazonaws.com',
     '*'  # Allow all origins when using public server
-]
+}
 
 cors = CORS(app, origins=ALLOWED_ORIGINS)
 >>>>>>> cf967bfa3abd668c28d4d5e380ac46a1635f8e54
@@ -347,8 +347,13 @@ if __name__ == '__main__':
     product_manager.check_new_products()
     
     # Get port from environment variable or use default
-    port = int(os.environ.get('PORT', 59106))
+    port = int(os.environ.get('PORT', 10000))
     host = os.environ.get('HOST', '0.0.0.0')
     
-    print(f"Server starting on http://{host}:{port}")
-    serve(app, host=host, port=port, threads=4)
+    if os.environ.get('RENDER'):
+        # Running on Render
+        app.run(host=host, port=port)
+    else:
+        # Local development
+        print(f"Server starting on http://{host}:{port}")
+        serve(app, host=host, port=port, threads=4)
