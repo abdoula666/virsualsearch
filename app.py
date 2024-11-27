@@ -26,11 +26,39 @@ import pathlib
 # Load environment variables
 load_dotenv()
 
+# Environment variable validation
+WOOCOMMERCE_BASE_URL = os.getenv('WOOCOMMERCE_BASE_URL')
+CONSUMER_KEY = os.getenv('WOOCOMMERCE_CONSUMER_KEY')
+CONSUMER_SECRET = os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.info(f"Environment Check:")
+logger.info(f"Base URL: {WOOCOMMERCE_BASE_URL}")
+logger.info(f"Consumer Key: {'Set' if CONSUMER_KEY else 'Not Set'}")
+logger.info(f"Consumer Secret: {'Set' if CONSUMER_SECRET else 'Not Set'}")
+
+if not WOOCOMMERCE_BASE_URL:
+    WOOCOMMERCE_BASE_URL = "https://cgbshop1.com"
+    logger.warning(f"WOOCOMMERCE_BASE_URL not set, using default: {WOOCOMMERCE_BASE_URL}")
+
+if not CONSUMER_KEY or not CONSUMER_SECRET:
+    logger.error("WooCommerce credentials not set. Please configure WOOCOMMERCE_CONSUMER_KEY and WOOCOMMERCE_CONSUMER_SECRET")
+    CONSUMER_KEY = "ck_da1507a982310e8a29d704df57b4e886b26d528a"
+    CONSUMER_SECRET = "cs_2917aeffff79c6bb2427849b617f0c992959f301"
+    logger.warning("Using default credentials for development")
+
+# Ensure base URL has correct format
+if not WOOCOMMERCE_BASE_URL.startswith(('http://', 'https://')):
+    WOOCOMMERCE_BASE_URL = f"https://{WOOCOMMERCE_BASE_URL}"
+logger.info(f"Final WooCommerce Base URL: {WOOCOMMERCE_BASE_URL}")
+
+WOOCOMMERCE_API_URL = f"{WOOCOMMERCE_BASE_URL}/wp-json/wc/v3"
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
@@ -44,16 +72,6 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# WooCommerce API Configuration
-WOOCOMMERCE_BASE_URL = os.getenv('WOOCOMMERCE_BASE_URL', 'https://cgbshop1.com')
-WOOCOMMERCE_API_URL = f"{WOOCOMMERCE_BASE_URL}/wp-json/wc/v3"
-CONSUMER_KEY = os.getenv('WOOCOMMERCE_CONSUMER_KEY')
-CONSUMER_SECRET = os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
-
-if not all([WOOCOMMERCE_BASE_URL, CONSUMER_KEY, CONSUMER_SECRET]):
-    logger.error("Missing required WooCommerce configuration. Please check your .env file.")
-    raise ValueError("Missing required WooCommerce configuration")
 
 # Security configuration
 ALLOWED_ORIGINS = [
@@ -125,10 +143,13 @@ class ProductManager:
         try:
             with self.processing_lock:
                 logger.info("Starting product check...")
+                logger.info(f"Using WooCommerce API URL: {WOOCOMMERCE_API_URL}")
                 
                 # Test API connection first
                 try:
                     test_url = f"{WOOCOMMERCE_API_URL}/products/categories"
+                    logger.info(f"Testing API connection with URL: {test_url}")
+                    
                     test_response = requests.get(
                         test_url,
                         auth=(CONSUMER_KEY, CONSUMER_SECRET),
