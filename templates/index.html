@@ -541,6 +541,12 @@
         let isListening = false;
         let recognition = null;
 
+        // Configuration
+        const config = {
+            apiUrl: 'https://visual-search-api.onrender.com', // We'll deploy to Render.com
+            maxFileSize: 5 * 1024 * 1024 // 5MB
+        };
+
         // Initialize speech recognition
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
@@ -624,37 +630,24 @@
         }
 
         async function searchProducts(file) {
-            showLoading(true);
-            errorDiv.style.display = 'none';
-
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('category', categoryFilter.value);
-
             try {
-                const response = await fetch('/search', {
+                showLoading(true);
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${config.apiUrl}/search`, {
                     method: 'POST',
                     body: formData
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Une erreur est survenue');
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const data = await response.json();
-                
-                if (data.results && data.results.length > 0) {
-                    updateCategoryFilter(data.results);
-                    displayResults(data.results);
-                    noResultsDiv.style.display = 'none';
-                } else {
-                    resultsDiv.innerHTML = '';
-                    noResultsDiv.style.display = 'block';
-                }
+                const results = await response.json();
+                displayResults(results);
             } catch (error) {
-                showError(error.message);
-                resultsDiv.innerHTML = '';
+                showError("Erreur lors de la recherche: " + error.message);
             } finally {
                 showLoading(false);
             }
@@ -700,12 +693,19 @@
 
         async function searchWooCommerceProducts(query) {
             try {
-                const response = await fetch(`/search_products?query=${encodeURIComponent(query)}`);
-                if (!response.ok) throw new Error('Erreur lors de la recherche');
+                showLoading(true);
+                const response = await fetch(`${config.apiUrl}/search_text?query=${encodeURIComponent(query)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
                 const results = await response.json();
                 displayTextResults(results);
             } catch (error) {
-                showError('Erreur lors de la recherche: ' + error.message);
+                showError("Erreur lors de la recherche: " + error.message);
+            } finally {
+                showLoading(false);
             }
         }
 
@@ -785,7 +785,7 @@
 
             async function searchProducts(query) {
                 try {
-                    const response = await fetch(`/text_search?query=${encodeURIComponent(query)}`);
+                    const response = await fetch(`${config.apiUrl}/text_search?query=${encodeURIComponent(query)}`);
                     if (!response.ok) throw new Error('Erreur lors de la recherche');
                     const data = await response.json();
 

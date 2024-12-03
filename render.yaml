@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: visual-search-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.8.0
+      - key: WOOCOMMERCE_URL
+        sync: false
+      - key: WOOCOMMERCE_CONSUMER_KEY
+        sync: false
+      - key: WOOCOMMERCE_CONSUMER_SECRET
+        sync: false

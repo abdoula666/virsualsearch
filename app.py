@@ -19,6 +19,7 @@ import traceback
 import json
 from dotenv import load_dotenv
 from search import search_bp
+from flask_cors import CORS
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 app.register_blueprint(search_bp)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
