@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recherche Visuelle</title>
+    <style>
+        :root {
+            --primary-color: #ae2740;
+            --text-color: #333;
+            --background-color: #f5f5f5;
+            --card-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            --transition-speed: 0.3s;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .search-container {
+            margin: 20px auto;
+            max-width: 800px;
+            position: relative;
+        }
+
+        .search-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            width: 100%;
+            background: white;
+            border-radius: 30px;
+            padding: 8px 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.3s ease;
+        }
+
+        .search-input-wrapper:focus-within {
+            box-shadow: 0 4px 12px rgba(174, 39, 64, 0.15);
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: transparent;
+            color: #333;
+        }
+
+        .search-input:focus {
+            outline: none;
+        }
+
+        .search-input::placeholder {
+            color: #999;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 42px;
+            height: 42px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            box-shadow: 0 2px 5px rgba(174, 39, 64, 0.2);
+        }
+
+        .btn:hover {
+            background-color: #8e1f33;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(174, 39, 64, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 4px rgba(174, 39, 64, 0.2);
+        }
+
+        .mic-button {
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            width: 42px;
+            height: 42px;
+            font-size: 1.2em;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            position: static;
+            border-radius: 50%;
+        }
+
+        .mic-button:hover {
+            color: var(--primary-color);
+            background-color: rgba(174, 39, 64, 0.1);
+        }
+
+        .mic-button.listening {
+            color: #ff0000;
+            background-color: rgba(255, 0, 0, 0.1);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            padding: 15px;
+            margin: 15px 0;
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .filter-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+            padding: 10px;
+        }
+
+        .product-link {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 18px;
+            display: none;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            padding: 10px;
+        }
+
+        @media (min-width: 768px) {
+            .results {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .results {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (min-width: 1280px) {
+            .results {
+                grid-template-columns: repeat(5, 1fr);
+            }
+        }
+
+        .product-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform var(--transition-speed);
+            box-shadow: var(--card-shadow);
+            position: relative;
+        }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+
+        .product-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-bottom: 1px solid #eee;
+        }
+
+        .product-info {
+            padding: 15px;
+        }
+
+        .product-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-color);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .product-price {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .product-categories {
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .category-tag {
+            font-size: 12px;
+            padding: 4px 8px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            color: #666;
+        }
+
+        .search-translation {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+            text-align: right;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .search-translation.visible {
+            opacity: 1;
+        }
+
+        #searchResults {
+            margin-top: 20px;
+        }
+
+        .search-results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px auto;
+            max-width: 800px;
+            padding: 0 10px;
+        }
+
+        .product-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            transition: transform 0.2s;
+            background: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .product-card a {
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .product-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .product-name {
+            margin: 8px 0;
+            font-weight: bold;
+            font-size: 0.9em;
+            color: #333;
+            flex-grow: 1;
+            /* Ensure text doesn't overflow */
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .product-price {
+            color: var(--primary-color);
+            font-weight: bold;
+            font-size: 1em;
+            margin: 4px 0;
+        }
+
+        .product-category {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 4px;
+            font-style: italic;
+            /* Ensure text doesn't overflow */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 768px) {
+            .search-results-grid {
+                gap: 10px;
+                padding: 0 5px;
+            }
+
+            .product-card {
+                padding: 8px;
+            }
+
+            .product-image {
+                height: 140px;
+            }
+
+            .product-name {
+                font-size: 0.85em;
+                margin: 6px 0;
+            }
+
+            .product-price {
+                font-size: 0.9em;
+            }
+
+            .product-category {
+                font-size: 0.75em;
+            }
+        }
+
+        .text-results {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 10px;
+        }
+
+        .text-results .product-card {
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #fileInput {
+            display: none;
+            width: 0.1px;
+            height: 0.1px;
+            opacity: 0;
+            overflow: hidden;
+            position: absolute;
+            z-index: -1;
+        }
+
+        .search-results-container {
+            margin-top: 30px;
+            display: grid;
+            gap: 30px;
+        }
+
+        .searched-product {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .searched-product-header {
+            font-size: 1.2em;
+            color: var(--text-color);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .recommendations-header {
+            font-size: 1.2em;
+            color: var(--text-color);
+            margin: 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        @media (min-width: 768px) {
+            .search-results-container {
+                grid-template-columns: 300px 1fr;
+                align-items: start;
+            }
+        }
+
+        .product-card.searched-item {
+            border: 2px solid var(--primary-color);
+            position: relative;
+        }
+
+        .product-card.searched-item::before {
+            content: "Votre recherche";
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            z-index: 1;
+        }
+    </style>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="search-container">
+            <div class="search-input-wrapper">
+                <input type="text" class="search-input" placeholder="Rechercher un produit..." id="searchInput">
+                <button id="micButton" class="mic-button">
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <label for="fileInput" class="btn">
+                    <i class="fas fa-camera"></i>
+                </label>
+            </div>
+            <div class="search-translation" id="searchTranslation"></div>
+            <div id="searchResults"></div>
+        </div>
+
+        <input type="file" id="fileInput" accept="image/*">
+
+        <div class="filter-container" style="display: none;">
+            <select id="categoryFilter">
+                <option value="">Toutes les catégories</option>
+            </select>
+        </div>
+
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <p>Recherche en cours...</p>
+        </div>
+
+        <div class="error"></div>
+        <div class="no-results">Aucun résultat trouvé</div>
+        <div class="results"></div>
+        <div class="text-results"></div>
+
+        <div class="search-results-container">
+            <div class="results-section">
+                <div class="recommendations-header">Produits recommandés</div>
+                <div class="results"></div>
+                <div class="text-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const micButton = document.getElementById('micButton');
+        const resultsDiv = document.querySelector('.results');
+        const loadingDiv = document.querySelector('.loading');
+        const errorDiv = document.querySelector('.error');
+        const noResultsDiv = document.querySelector('.no-results');
+        const categoryFilter = document.getElementById('categoryFilter');
+        const searchInput = document.getElementById('searchInput');
+        const textResultsDiv = document.querySelector('.text-results');
+
+        let categories = new Set();
+        let searchTimeout;
+        let isListening = false;
+        let recognition = null;
+
+        // Initialize speech recognition
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'fr-FR';  // Set to French since the interface is in French
+
+            recognition.onstart = function() {
+                isListening = true;
+                micButton.classList.add('listening');
+            };
+
+            recognition.onend = function() {
+                isListening = false;
+                micButton.classList.remove('listening');
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                searchInput.value = transcript;
+                // Trigger the search
+                const inputEvent = new Event('input', { bubbles: true });
+                searchInput.dispatchEvent(inputEvent);
+            };
+
+            recognition.onerror = function(event) {
+                console.error('Speech recognition error:', event.error);
+                isListening = false;
+                micButton.classList.remove('listening');
+            };
+        }
+
+        // Add click handler for microphone button
+        micButton.addEventListener('click', () => {
+            if (!recognition) {
+                alert('Speech recognition is not supported in your browser.');
+                return;
+            }
+
+            if (isListening) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        });
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showLoading(show) {
+            loadingDiv.style.display = show ? 'block' : 'none';
+            if (show) {
+                resultsDiv.innerHTML = '';
+                noResultsDiv.style.display = 'none';
+            }
+        }
+
+        function updateCategoryFilter(products) {
+            products.forEach(product => {
+                product.categories.forEach(category => {
+                    categories.add(category);
+                });
+            });
+
+            const currentValue = categoryFilter.value;
+            categoryFilter.innerHTML = '<option value="">Toutes les catégories</option>';
+            Array.from(categories).sort().forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                if (category === currentValue) {
+                    option.selected = true;
+                }
+                categoryFilter.appendChild(option);
+            });
+        }
+
+        async function searchProducts(file) {
+            showLoading(true);
+            errorDiv.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('category', categoryFilter.value);
+
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Une erreur est survenue');
+                }
+
+                const data = await response.json();
+                
+                if (data.results && data.results.length > 0) {
+                    updateCategoryFilter(data.results);
+                    displayResults(data.results);
+                    noResultsDiv.style.display = 'none';
+                } else {
+                    resultsDiv.innerHTML = '';
+                    noResultsDiv.style.display = 'block';
+                }
+            } catch (error) {
+                showError(error.message);
+                resultsDiv.innerHTML = '';
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function displayResults(results) {
+            const resultsDiv = document.querySelector('.results');
+            
+            // Start with the searched product if it exists
+            let resultsHTML = '';
+            if (results.length > 0 && fileInput.files && fileInput.files[0]) {
+                const searchedImage = URL.createObjectURL(fileInput.files[0]);
+                resultsHTML += `
+                    <div class="product-card searched-item">
+                        <img src="${searchedImage}" alt="Produit recherché" class="product-image">
+                        <div class="product-info">
+                            <h3 class="product-name">Votre recherche</h3>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Add the recommended products
+            resultsHTML += results.map(product => `
+                <a href="${product.product_url}" class="product-link" target="_blank">
+                    <div class="product-card">
+                        <img src="${product.image_url}" alt="${product.name}" class="product-image">
+                        <div class="product-info">
+                            <h3 class="product-name">${product.name}</h3>
+                            <div class="product-price">${product.price} CFA</div>
+                            <div class="product-categories">
+                                ${product.categories.map(cat => `
+                                    <span class="category-tag">${cat}</span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </a>
+            `).join('');
+
+            resultsDiv.innerHTML = resultsHTML;
+        }
+
+        async function searchWooCommerceProducts(query) {
+            try {
+                const response = await fetch(`/search_products?query=${encodeURIComponent(query)}`);
+                if (!response.ok) throw new Error('Erreur lors de la recherche');
+                const results = await response.json();
+                displayTextResults(results);
+            } catch (error) {
+                showError('Erreur lors de la recherche: ' + error.message);
+            }
+        }
+
+        function displayTextResults(results) {
+            const textResultsDiv = document.querySelector('.text-results');
+            textResultsDiv.innerHTML = '';
+            
+            if (results.length === 0) {
+                textResultsDiv.innerHTML = '<div class="no-results">Aucun produit trouvé</div>';
+                return;
+            }
+
+            results.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'product-card';
+                
+                const link = document.createElement('a');
+                link.href = product.permalink;
+                link.className = 'product-link';
+                link.target = '_blank';
+
+                const image = document.createElement('img');
+                image.src = product.images[0]?.src || 'placeholder.jpg';
+                image.alt = product.name;
+                image.className = 'product-image';
+
+                const info = document.createElement('div');
+                info.className = 'product-info';
+                info.innerHTML = `
+                    <h3 class="product-name">${product.name}</h3>
+                    <div class="product-price">${product.price} CFA</div>
+                    <div class="product-categories">
+                        ${product.categories.map(cat => `
+                            <span class="category-tag">${cat.name}</span>
+                        `).join('')}
+                    </div>
+                `;
+
+                link.appendChild(image);
+                link.appendChild(info);
+                card.appendChild(link);
+                textResultsDiv.appendChild(card);
+            });
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                searchProducts(e.target.files[0]);
+            }
+        });
+
+        categoryFilter.addEventListener('change', () => {
+            if (fileInput.files && fileInput.files[0]) {
+                searchProducts(fileInput.files[0]);
+            }
+        });
+
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            
+            if (query.length < 2) {
+                textResultsDiv.innerHTML = '';
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                searchWooCommerceProducts(query);
+            }, 300);
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('searchInput');
+            const searchResultsDiv = document.getElementById('searchResults');
+            const searchTranslation = document.getElementById('searchTranslation');
+            let searchTimeout;
+
+            async function searchProducts(query) {
+                try {
+                    const response = await fetch(`/text_search?query=${encodeURIComponent(query)}`);
+                    if (!response.ok) throw new Error('Erreur lors de la recherche');
+                    const data = await response.json();
+
+                    // Show translation feedback if query was translated
+                    if (data.translation && data.translation !== query) {
+                        searchTranslation.textContent = `Searching for: "${data.translation}"`;
+                        searchTranslation.classList.add('visible');
+                    } else {
+                        searchTranslation.classList.remove('visible');
+                    }
+
+                    displayResults(data.results);
+                } catch (error) {
+                    searchResultsDiv.innerHTML = `<div class="error">Erreur: ${error.message}</div>`;
+                    searchTranslation.classList.remove('visible');
+                }
+            }
+
+            function displayResults(results) {
+                searchResultsDiv.innerHTML = '';
+                
+                if (!results || results.length === 0) {
+                    searchResultsDiv.innerHTML = '<div class="no-results">Aucun produit trouvé</div>';
+                    return;
+                }
+
+                const resultsGrid = document.createElement('div');
+                resultsGrid.className = 'search-results-grid';
+
+                results.forEach(product => {
+                    const card = document.createElement('div');
+                    card.className = 'product-card';
+                    
+                    const image = product.images && product.images.length > 0 
+                        ? product.images[0].src 
+                        : 'placeholder-image-url.jpg';
+                    
+                    card.innerHTML = `
+                        <a href="${product.permalink}" target="_blank">
+                            <img src="${image}" alt="${product.name}" class="product-image">
+                            <div class="product-name">${product.name}</div>
+                            <div class="product-price">${product.price} CFA</div>
+                            <div class="product-category">${product.categories.join(', ')}</div>
+                        </a>
+                    `;
+                    
+                    resultsGrid.appendChild(card);
+                });
+
+                searchResultsDiv.appendChild(resultsGrid);
+            }
+
+            // Add event listener for search input with debounce
+            searchInput.addEventListener('input', function(e) {
+                clearTimeout(searchTimeout);
+                const query = e.target.value.trim();
+                
+                if (query.length > 0) {
+                    searchTimeout = setTimeout(() => {
+                        searchProducts(query);
+                    }, 300);
+                } else {
+                    searchResultsDiv.innerHTML = '';
+                    searchTranslation.classList.remove('visible');
+                }
+            });
+        });
+
+        // Check initial status
+        fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                if (!data.ready) {
+                    showError('Chargement des produits en cours... Veuillez patienter.');
+                }
+            })
+            .catch(error => {
+                showError('Erreur de connexion au serveur');
+            });
+    </script>
+</body>
+</html>
