@@ -52,6 +52,40 @@ python app.py
 
 9. Open your browser and go to `http://localhost:5000`
 
+## Deployment
+
+### Environment Variables
+For security reasons, this application uses environment variables for WooCommerce credentials. These should **never** be committed to the repository.
+
+1. In your deployment environment (local or production):
+   - Copy `.env.example` to `.env`
+   - Update `.env` with your actual WooCommerce credentials
+   - Keep `.env` file secure and never commit it to version control
+
+2. Required Environment Variables:
+   ```
+   WOOCOMMERCE_URL=your_store_url
+   WOOCOMMERCE_CONSUMER_KEY=your_key
+   WOOCOMMERCE_CONSUMER_SECRET=your_secret
+   ```
+
+### GitHub Deployment
+1. Create a new GitHub repository
+2. Push your code while keeping credentials secure:
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin your_github_repo_url
+   git push -u origin main
+   ```
+
+3. For deployment platforms (like Heroku, Railway, etc.):
+   - Set environment variables in your deployment platform's settings
+   - Never expose these values in your code or repository
+   - Follow the platform's specific instructions for deploying Flask applications
+
 ## Project Structure
 ```
 virsualsearch/
