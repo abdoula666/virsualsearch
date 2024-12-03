@@ -2,13 +2,19 @@
 
 This is a visual search application that allows users to search for products by uploading images. The application uses deep learning to find visually similar products in your WooCommerce store.
 
-## Environment Setup
+## Quick Start
 
-1. Clone the repository
+1. Clone the repository:
+```bash
+git clone https://github.com/abdoula666/virsualsearch.git
+cd virsualsearch
+```
+
 2. Create a virtual environment and activate it:
 ```bash
 python -m venv .venv
 .venv\Scripts\activate  # On Windows
+source .venv/bin/activate  # On Linux/Mac
 ```
 
 3. Install dependencies:
@@ -25,9 +31,39 @@ pip install -r requirements.txt
      WOOCOMMERCE_CONSUMER_SECRET=your_consumer_secret
      ```
 
-5. Run the application:
+5. Create required directories:
+```bash
+mkdir -p product_images uploads
+```
+
+6. Add your product images to the `product_images` folder:
+   - Name format: `productID_description.jpg`
+   - Make sure the productID matches your WooCommerce product IDs
+
+7. Generate feature vectors:
+```bash
+python feature_extraction.py
+```
+
+8. Run the application:
 ```bash
 python app.py
+```
+
+9. Open your browser and go to `http://localhost:5000`
+
+## Project Structure
+```
+virsualsearch/
+├── .env                    # Environment variables (create this)
+├── .env.example           # Example environment file
+├── app.py                 # Main application file
+├── feature_extraction.py  # Feature extraction script
+├── search.py             # Search functionality
+├── requirements.txt      # Python dependencies
+├── product_images/      # Store your product images here
+├── uploads/            # Temporary storage for uploaded images
+└── templates/         # HTML templates
 ```
 
 ## Security Notes
@@ -35,38 +71,18 @@ python app.py
 - Keep your API credentials secure
 - Use environment variables for all sensitive information
 
-## Setup Instructions
+## Troubleshooting
 
-1. Prepare your product images:
-   - Create a folder named `product_images`
-   - Add your product images to this folder
-   - Name your images in the format: `productID_description.jpg`
-   - Example: `123_blue_shirt.jpg` where 123 is the WooCommerce product ID
+1. If you get import errors:
+   - Make sure you've activated the virtual environment
+   - Verify all dependencies are installed: `pip install -r requirements.txt`
 
-2. Generate the feature vectors:
-```bash
-python feature_extraction.py
-```
-This will create three files:
-- `featurevector.pkl`: Contains the extracted image features
-- `filenames.pkl`: Contains the paths to your images
-- `product_ids.pkl`: Contains the WooCommerce product IDs
+2. If feature extraction fails:
+   - Ensure product_images directory exists and contains images
+   - Check image format (JPG/JPEG recommended)
+   - Verify image naming format (productID_description.jpg)
 
-3. Open your browser and go to `http://localhost:5000`
-
-## Using the Application
-
-1. Click the "Take Photo" button to use your device's camera
-2. Or click "Choose Image" to upload an image from your device
-3. The application will show visually similar products from your store
-4. Click "View Details" to see the full product information on your WooCommerce store
-
-## Features
-
-- Mobile-friendly interface
-- Camera integration for direct photo capture
-- Image upload support
-- Real-time visual search
-- Integration with WooCommerce API
-- Display of product names and prices
-- Direct links to product pages
+3. If WooCommerce connection fails:
+   - Verify your credentials in .env file
+   - Check if your WooCommerce site is accessible
+   - Ensure API access is enabled in WooCommerce settings
