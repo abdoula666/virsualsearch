@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Search Application - Installation Guide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        pre {
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+        }
+        h1, h2 {
+            color: #24292e;
+        }
+        .warning {
+            background-color: #fff5b1;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Visual Search Application</h1>
+    <p>This guide will help you set up and run the Visual Search Application on your local machine.</p>
+
+    <div class="step">
+        <h2>Step 1: Clone the Repository</h2>
+        <pre><code>git clone https://github.com/abdoula666/virsualsearch.git
+cd virsualsearch</code></pre>
+    </div>
+
+    <div class="step">
+        <h2>Step 2: Set Up Python Environment</h2>
+        <p>Create and activate a virtual environment:</p>
+        <h3>For Windows:</h3>
+        <pre><code>python -m venv .venv
+.venv\Scripts\activate</code></pre>
+        <h3>For Linux/Mac:</h3>
+        <pre><code>python -m venv .venv
+source .venv/bin/activate</code></pre>
+        <p>Install dependencies:</p>
+        <pre><code>pip install -r requirements.txt</code></pre>
+    </div>
+
+    <div class="step">
+        <h2>Step 3: Configure WooCommerce Credentials</h2>
+        <ol>
+            <li>Copy <code>.env.example</code> to <code>.env</code></li>
+            <li>Open <code>.env</code> and add your WooCommerce credentials:
+                <pre><code>WOOCOMMERCE_URL=your_store_url
+WOOCOMMERCE_CONSUMER_KEY=your_key
+WOOCOMMERCE_CONSUMER_SECRET=your_secret</code></pre>
+            </li>
+        </ol>
+        <div class="warning">
+            ⚠️ Never share or commit your .env file containing real credentials!
+        </div>
+    </div>
+
+    <div class="step">
+        <h2>Step 4: Add Product Images</h2>
+        <ol>
+            <li>Place your product images in the <code>product_images</code> folder</li>
+            <li>Use the naming format: <code>productID_description.jpg</code></li>
+            <li>Ensure productID matches your WooCommerce product IDs</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <h2>Step 5: Generate Feature Vectors</h2>
+        <pre><code>python feature_extraction.py</code></pre>
+        <p>This step may take a few minutes depending on the number of images.</p>
+    </div>
+
+    <div class="step">
+        <h2>Step 6: Run the Application</h2>
+        <pre><code>python app.py</code></pre>
+        <p>Open your browser and navigate to: <code>http://localhost:5000</code></p>
+    </div>
+
+    <div class="step">
+        <h2>Troubleshooting</h2>
+        <ul>
+            <li>Make sure all dependencies are installed correctly</li>
+            <li>Verify your WooCommerce credentials are correct</li>
+            <li>Check that your product images are in the correct format</li>
+            <li>Ensure your WooCommerce API access is enabled</li>
+        </ul>
+    </div>
+
+    <footer>
+        <p>For more detailed information and updates, visit the <a href="https://github.com/abdoula666/virsualsearch">GitHub repository</a>.</p>
+    </footer>
+</body>
+</html>

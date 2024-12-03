@@ -1,0 +1,334 @@
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('textSearchInput');
+        const searchResultsDiv = document.getElementById('textSearchResults');
+        const searchTranslation = document.getElementById('searchTranslation');
+        const micButton = document.getElementById('micButton');
+        const fileInput = document.getElementById('fileInput');
+        let searchTimeout;
+        let lastQuery = '';
+
+        async function searchProducts(query) {
+            try {
+                const response = await fetch(`/text_search?query=${encodeURIComponent(query)}`);
+                if (!response.ok) throw new Error('Erreur lors de la recherche');
+                const data = await response.json();
+
+                // Show translation feedback if query was translated
+                if (data.translation && data.translation !== query) {
+                    searchTranslation.textContent = `Searching for: "${data.translation}"`;
+                    searchTranslation.classList.add('visible');
+                } else {
+                    searchTranslation.classList.remove('visible');
+                }
+
+                displayResults(data.results);
+            } catch (error) {
+                searchResultsDiv.innerHTML = `<div class="error">Erreur: ${error.message}</div>`;
+                searchTranslation.classList.remove('visible');
+            }
+        }
+
+        function displayResults(results) {
+            searchResultsDiv.innerHTML = '';
+            
+            if (!results || results.length === 0) {
+                searchResultsDiv.innerHTML = '<div class="no-results">Aucun produit trouvé</div>';
+                return;
+            }
+
+            const resultsGrid = document.createElement('div');
+            resultsGrid.className = 'search-results-grid';
+
+            // Reverse the results array to show most recent first
+            results.reverse().forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'search-product-card';
+                
+                const link = document.createElement('a');
+                link.href = product.permalink;
+                link.className = 'search-product-link';
+                link.target = '_blank';
+
+                const image = document.createElement('img');
+                image.src = product.images[0]?.src || 'placeholder.jpg';
+                image.alt = product.name;
+                image.className = 'search-product-image';
+
+                const info = document.createElement('div');
+                info.className = 'search-product-info';
+                
+                const name = document.createElement('h3');
+                name.className = 'search-product-name';
+                name.textContent = product.name;
+
+                const price = document.createElement('p');
+                price.className = 'search-product-price';
+                price.textContent = product.price + ' CFA';
+
+                info.appendChild(name);
+                info.appendChild(price);
+                link.appendChild(image);
+                link.appendChild(info);
+                card.appendChild(link);
+                resultsGrid.appendChild(card);
+            });
+
+            searchResultsDiv.appendChild(resultsGrid);
+        }
+
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            const query = e.target.value.trim();
+            
+            if (query.length < 2) {
+                searchResultsDiv.innerHTML = '';
+                searchTranslation.textContent = '';
+                searchTranslation.classList.remove('visible');
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                searchProducts(query);
+            }, 300);
+        });
+
+        // Speech Recognition Setup
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.lang = 'en-US';
+        
+        recognition.onstart = function() {
+            micButton.classList.add('listening');
+        };
+        
+        recognition.onend = function() {
+            micButton.classList.remove('listening');
+        };
+        
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            searchInput.value = transcript;
+            searchInput.dispatchEvent(new Event('input'));
+        };
+        
+        recognition.onerror = function(event) {
+            console.error('Speech recognition error:', event.error);
+            micButton.classList.remove('listening');
+        };
+        
+        micButton.addEventListener('click', function() {
+            if (micButton.classList.contains('listening')) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        });
+
+        fileInput.addEventListener('change', async (e) => {
+            if (e.target.files && e.target.files[0]) {
+                const formData = new FormData();
+                formData.append('file', e.target.files[0]);
+                
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) throw new Error('Error uploading image');
+                    
+                    const data = await response.json();
+                    displayResults(data.results);
+                } catch (error) {
+                    searchResultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                }
+            }
+        });
+    });
+</script>
+
+<style>
+    .text-search-container {
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto 20px;
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .text-search-input {
+        width: 100%;
+        padding: 12px 20px;
+        border: 2px solid var(--primary-color);
+        border-radius: 8px;
+        font-size: 16px;
+        transition: all var(--transition-speed);
+        outline: none;
+    }
+
+    .text-search-input:focus {
+        box-shadow: 0 0 0 3px rgba(174, 39, 64, 0.2);
+    }
+
+    .search-translation {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+        font-style: italic;
+        text-align: right;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .search-translation.visible {
+        opacity: 1;
+    }
+
+    #textSearchResults {
+        margin-top: 20px;
+    }
+
+    .search-results-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 20px;
+        padding: 10px;
+    }
+
+    .search-product-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: var(--card-shadow);
+        overflow: hidden;
+        transition: transform var(--transition-speed);
+        opacity: 0;
+        transform: translateY(20px);
+        animation: searchFadeIn 0.3s ease forwards;
+    }
+
+    @keyframes searchFadeIn {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .search-product-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .search-product-image {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+    }
+
+    .search-product-info {
+        padding: 15px;
+    }
+
+    .search-product-name {
+        margin: 0;
+        font-size: 16px;
+        color: var(--text-color);
+    }
+
+    .search-product-price {
+        margin: 10px 0 0;
+        font-weight: bold;
+        color: var(--primary-color);
+    }
+
+    .search-product-link {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+
+    .error {
+        color: #dc3545;
+        text-align: center;
+        padding: 10px;
+    }
+
+    .no-results {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+    }
+
+    .mic-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        margin-left: 8px;
+        border-radius: 50%;
+        transition: background-color 0.3s;
+    }
+    
+    .mic-button:hover {
+        background-color: #f0f0f0;
+    }
+    
+    .mic-button.listening {
+        background-color: #ff4444;
+    }
+    
+    .mic-button i {
+        color: #666;
+        font-size: 20px;
+    }
+    
+    .mic-button.listening i {
+        color: white;
+    }
+
+    .camera-button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        transition: background-color 0.3s;
+        position: relative;
+    }
+    
+    .camera-button:hover {
+        background-color: #f0f0f0;
+    }
+    
+    .camera-button i {
+        color: #666;
+        font-size: 20px;
+    }
+    
+    .camera-button input[type="file"] {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+</style>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<div class="text-search-container">
+    <input type="text" id="textSearchInput" class="text-search-input" placeholder="Rechercher un produit...">
+    <button id="micButton" class="mic-button" title="Search by voice">
+        <i class="fas fa-microphone"></i>
+    </button>
+    <label class="camera-button" title="Search by image">
+        <i class="fas fa-camera"></i>
+        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+    </label>
+    <div class="search-translation" id="searchTranslation"></div>
+</div>
+<div id="textSearchResults"></div>
