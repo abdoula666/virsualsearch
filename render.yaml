@@ -3,7 +3,7 @@ services:
     name: visual-search-api
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app --timeout 300 --workers 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.8.0
