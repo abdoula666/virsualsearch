@@ -258,42 +258,59 @@ def index():
     return render_template('index.html')
 
 @app.route('/status')
-def get_status():
-    """Get the current status of the product manager"""
-    status = {
-        'initialized': product_manager.is_initialized,
-        'total_products': len(product_manager.products),
-        'products_with_features': len(product_manager.features),
-        'last_check': product_manager.last_check.isoformat() if product_manager.last_check else None,
-        'initialization_error': product_manager.initialization_error,
-        'ready': len(product_manager.products) > 0 and len(product_manager.features) > 0
-    }
-    
-    # Test WooCommerce connection
-    woo_status = "Connected" if product_manager.test_woocommerce_connection() else "Not Connected"
-    status['woocommerce_status'] = woo_status
-    
-    return jsonify(status)
-
-@app.route('/search', methods=['POST'])
-@limiter.limit("10 per minute")  # Rate limit for search endpoint
-def search():
+def health_check():
+    """Health check endpoint for Render"""
     try:
-        # Check if model is initialized
-        if feature_extractor is None:
-            if model_initialization_error:
-                return jsonify({
-                    'error': 'Model initialization failed',
-                    'details': model_initialization_error
-                }), 503
+        # Check if model is loaded
+        if not feature_extractor:
             return jsonify({
-                'error': 'Model is still initializing',
-                'retry_after': 60
+                'status': 'initializing',
+                'message': 'Model is still loading'
+            }), 503
+        
+        # Check WooCommerce connection
+        if not product_manager.test_woocommerce_connection():
+            return jsonify({
+                'status': 'degraded',
+                'message': 'WooCommerce connection failed'
             }), 503
 
+        return jsonify({
+            'status': 'healthy',
+            'products_loaded': len(product_manager.products),
+            'features_extracted': len(product_manager.features)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.after_request
+def after_request(response):
+    """Add CORS headers to all responses"""
+    response.headers.add('Access-Control-Allow-Origin', 'https://abdoula666.github.io')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    return response
+
+@app.route('/search', methods=['POST', 'OPTIONS'])
+def search():
+    """Handle image search requests"""
+    if request.method == 'OPTIONS':
+        return '', 204
+        
+    try:
+        # Check initialization
+        if not feature_extractor:
+            return jsonify({
+                'error': 'Service initializing',
+                'retry_after': 60
+            }), 503
+            
         if not product_manager.is_initialized or len(product_manager.products) == 0:
             status = {
-                'error': 'Products still loading, please wait',
+                'error': 'Products still loading',
                 'total_products': len(product_manager.products),
                 'products_with_features': len(product_manager.features),
                 'initialization_error': product_manager.initialization_error,

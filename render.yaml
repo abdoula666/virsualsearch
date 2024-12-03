@@ -3,7 +3,8 @@ services:
     name: visual-search-api
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --timeout 300 --workers 1
+    startCommand: gunicorn app:app --timeout 300 --workers 1 --threads 2 --worker-class gthread --max-requests 1000 --max-requests-jitter 50
+    plan: standard
     envVars:
       - key: PYTHON_VERSION
         value: 3.8.0
@@ -13,3 +14,9 @@ services:
         sync: false
       - key: WOOCOMMERCE_CONSUMER_SECRET
         sync: false
+      - key: WEB_CONCURRENCY
+        value: 1
+      - key: PYTHONUNBUFFERED
+        value: true
+    healthCheckPath: /status
+    autoDeploy: false
