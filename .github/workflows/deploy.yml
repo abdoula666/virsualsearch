@@ -1,4 +1,4 @@
-name: Deploy Flask App
+name: Deploy to GitHub Container Registry
 
 on:
   push:
@@ -6,31 +6,45 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-    - uses: actions/checkout@v2
-    
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.8'
-        
-    - name: Create Directories
-      run: |
-        mkdir -p product_images
-        mkdir -p uploads
-        
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install gunicorn
-        
-    - name: Create env file
-      run: |
-        echo "WOOCOMMERCE_URL=${{ secrets.WOOCOMMERCE_URL }}" > .env
-        echo "WOOCOMMERCE_CONSUMER_KEY=${{ secrets.WOOCOMMERCE_CONSUMER_KEY }}" >> .env
-        echo "WOOCOMMERCE_CONSUMER_SECRET=${{ secrets.WOOCOMMERCE_CONSUMER_SECRET }}" >> .env
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./templates
+          force_orphan: true
