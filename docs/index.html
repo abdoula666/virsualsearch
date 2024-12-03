@@ -7,7 +7,10 @@
     <script>
         // Configuration
         const config = {
-            apiUrl: 'https://visual-search-api.onrender.com'  // We'll deploy to Render
+            apiUrl: 'https://visual-search-api.onrender.com',  // Render deployment URL
+            maxRetries: 3,
+            timeout: 60000, // 60 seconds timeout
+            retryDelay: 2000 // 2 seconds between retries
         };
     </script>
     <style>
@@ -154,17 +157,32 @@
         }
 
         .error {
-            display: none;
             background: #fee;
             color: #c00;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
             text-align: center;
+            display: none;
         }
 
         .error.show {
             display: block;
+        }
+
+        .retry-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            margin-left: 10px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .retry-btn:hover {
+            background: #8e1f33;
         }
 
         @keyframes fadeIn {
@@ -224,12 +242,13 @@
         const fileInput = document.getElementById('fileInput');
         const searchInput = document.querySelector('.search-input');
         let searchTimeout;
+        let lastFile = null;
+        let isRetrying = false;
 
-        function showError(message) {
+        function showError(message, isRetryable = true) {
             const errorDiv = document.querySelector('.error');
-            errorDiv.textContent = message;
+            errorDiv.innerHTML = `${message} ${isRetryable ? '<button onclick="retryLastOperation()" class="retry-btn">Réessayer</button>' : ''}`;
             errorDiv.classList.add('show');
-            setTimeout(() => errorDiv.classList.remove('show'), 5000);
         }
 
         function showLoading(show) {
@@ -241,17 +260,92 @@
             }
         }
 
-        async function searchProducts(file) {
+        async function fetchWithTimeout(resource, options = {}) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), config.timeout);
+            
             try {
+                const response = await fetch(resource, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(id);
+                return response;
+            } catch (error) {
+                clearTimeout(id);
+                throw error;
+            }
+        }
+
+        async function searchProducts(file, retryCount = 0) {
+            try {
+                lastFile = file;
                 showLoading(true);
                 const formData = new FormData();
                 formData.append('file', file);
 
-                const response = await fetch(`${config.apiUrl}/search`, {
+                const response = await fetchWithTimeout(`${config.apiUrl}/search`, {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors',
+                    credentials: 'omit'
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    if (response.status === 429) {
+                        throw new Error('Limite de requêtes atteinte. Veuillez réessayer dans quelques minutes.');
+                    } else if (response.status === 503) {
+                        throw new Error('Le serveur est en cours d\'initialisation. Veuillez patienter.');
+                    } else {
+                        throw new Error(errorData.error || `Erreur serveur (${response.status})`);
+                    }
+                }
+
+                const results = await response.json();
+                if (results.error) {
+                    throw new Error(results.error);
+                }
+                displayResults(results);
+            } catch (error) {
+                console.error('Search error:', error);
+                
+                if (error.name === 'AbortError') {
+                    showError('La requête a pris trop de temps. Veuillez réessayer.');
+                } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    if (retryCount < config.maxRetries && !isRetrying) {
+                        isRetrying = true;
+                        showError(`Problème de connexion. Nouvelle tentative dans ${config.retryDelay/1000} secondes...`);
+                        setTimeout(() => {
+                            isRetrying = false;
+                            searchProducts(file, retryCount + 1);
+                        }, config.retryDelay);
+                        return;
+                    } else {
+                        showError('Impossible de se connecter au serveur. Veuillez vérifier votre connexion internet.');
+                    }
+                } else {
+                    showError(error.message);
+                }
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function retryLastOperation() {
+            if (lastFile) {
+                searchProducts(lastFile);
+            }
+        }
+
+        async function searchWooCommerceProducts(query) {
+            try {
+                showLoading(true);
+                const response = await fetchWithTimeout(`${config.apiUrl}/search?q=${encodeURIComponent(query)}`);
+                
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -286,24 +380,6 @@
             });
 
             resultsDiv.innerHTML = resultsHTML;
-        }
-
-        async function searchWooCommerceProducts(query) {
-            try {
-                showLoading(true);
-                const response = await fetch(`${config.apiUrl}/search?q=${encodeURIComponent(query)}`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const results = await response.json();
-                displayResults(results);
-            } catch (error) {
-                showError("Erreur lors de la recherche: " + error.message);
-            } finally {
-                showLoading(false);
-            }
         }
 
         fileInput.addEventListener('change', (e) => {
