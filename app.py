@@ -20,6 +20,8 @@ import json
 from dotenv import load_dotenv
 from search import search_bp
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Load environment variables
 load_dotenv()
@@ -32,25 +34,45 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["https://your-github-username.github.io"]}})
+CORS(app, resources={r"/*": {"origins": ["https://abdoula666.github.io"]}})
 app.register_blueprint(search_bp)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
 
 # WooCommerce API Configuration
 WOOCOMMERCE_URL = os.getenv('WOOCOMMERCE_URL')
 CONSUMER_KEY = os.getenv('WOOCOMMERCE_CONSUMER_KEY')
 CONSUMER_SECRET = os.getenv('WOOCOMMERCE_CONSUMER_SECRET')
 
-# Initialize ResNet model
-try:
-    base_model = ResNet50(weights='imagenet', include_top=False)
-    x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-    feature_extractor = tf.keras.Model(inputs=base_model.input, outputs=x)
-    logger.info("Successfully initialized ResNet50 model")
-except Exception as e:
-    logger.error(f"Error initializing ResNet50 model: {str(e)}")
-    raise
+# Model initialization with error handling
+model_lock = threading.Lock()
+model_initialization_error = None
+feature_extractor = None
+
+def initialize_model():
+    global feature_extractor, model_initialization_error
+    try:
+        with model_lock:
+            if feature_extractor is None:
+                base_model = ResNet50(weights='imagenet', include_top=False)
+                x = base_model.output
+                x = GlobalAveragePooling2D()(x)
+                feature_extractor = tf.keras.Model(inputs=base_model.input, outputs=x)
+                logger.info("Successfully initialized ResNet50 model")
+    except Exception as e:
+        model_initialization_error = str(e)
+        logger.error(f"Error initializing model: {str(e)}")
+        raise
+
+# Initialize model in background
+threading.Thread(target=initialize_model).start()
 
 class ProductManager:
     def __init__(self):
@@ -254,19 +276,31 @@ def get_status():
     return jsonify(status)
 
 @app.route('/search', methods=['POST'])
+@limiter.limit("10 per minute")  # Rate limit for search endpoint
 def search():
-    """Handle image search requests"""
-    if not product_manager.is_initialized or len(product_manager.products) == 0:
-        status = {
-            'error': 'Products still loading, please wait',
-            'total_products': len(product_manager.products),
-            'products_with_features': len(product_manager.features),
-            'initialization_error': product_manager.initialization_error,
-            'woocommerce_status': "Connected" if product_manager.test_woocommerce_connection() else "Not Connected"
-        }
-        return jsonify(status), 503
-
     try:
+        # Check if model is initialized
+        if feature_extractor is None:
+            if model_initialization_error:
+                return jsonify({
+                    'error': 'Model initialization failed',
+                    'details': model_initialization_error
+                }), 503
+            return jsonify({
+                'error': 'Model is still initializing',
+                'retry_after': 60
+            }), 503
+
+        if not product_manager.is_initialized or len(product_manager.products) == 0:
+            status = {
+                'error': 'Products still loading, please wait',
+                'total_products': len(product_manager.products),
+                'products_with_features': len(product_manager.features),
+                'initialization_error': product_manager.initialization_error,
+                'woocommerce_status': "Connected" if product_manager.test_woocommerce_connection() else "Not Connected"
+            }
+            return jsonify(status), 503
+
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
         
@@ -322,10 +356,19 @@ def search():
             'products_with_features': len(product_manager.features)
         })
 
+    except tf.errors.ResourceExhaustedError as e:
+        logger.error(f"Resource exhausted error: {str(e)}")
+        return jsonify({
+            'error': 'Resource limit exceeded',
+            'message': 'Please try again in a few minutes',
+            'retry_after': 3600  # 1 hour
+        }), 429
     except Exception as e:
-        logger.error(f"Error processing search: {str(e)}")
-        logger.debug(traceback.format_exc())
-        return jsonify({'error': 'Error processing image'}), 500
+        logger.error(f"Search error: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({
+            'error': 'Internal server error',
+            'message': str(e)
+        }), 500
 
 @app.route('/search_products')
 def search_products():
