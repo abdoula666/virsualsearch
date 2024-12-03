@@ -12,6 +12,13 @@
             timeout: 60000, // 60 seconds timeout
             retryDelay: 2000 // 2 seconds between retries
         };
+
+        // Connection status
+        let serverStatus = {
+            checked: false,
+            isConnected: false,
+            lastCheck: null
+        };
     </script>
     <style>
         /* Your existing CSS styles here */
@@ -200,6 +207,32 @@
             animation: fadeIn 0.3s ease forwards;
         }
 
+        .status-indicator {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+        }
+
+        .status-online {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .status-offline {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .status-loading {
+            background-color: #2196F3;
+            color: white;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -220,6 +253,9 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
+    <div id="status-indicator" class="status-indicator status-loading">
+        Vérification de la connexion...
+    </div>
     <div class="container">
         <div class="search-container">
             <div class="search-input-wrapper">
@@ -277,8 +313,53 @@
             }
         }
 
+        async function checkServerStatus() {
+            try {
+                const response = await fetchWithTimeout(`${config.apiUrl}/test-connection`);
+                const data = await response.json();
+                
+                const statusIndicator = document.getElementById('status-indicator');
+                
+                if (data.server_status === 'online' && data.woocommerce_connected && data.model_loaded) {
+                    statusIndicator.className = 'status-indicator status-online';
+                    statusIndicator.textContent = 'Connecté';
+                    serverStatus.isConnected = true;
+                } else {
+                    let issues = [];
+                    if (!data.woocommerce_connected) issues.push('WooCommerce non connecté');
+                    if (!data.model_loaded) issues.push('Modèle non chargé');
+                    
+                    statusIndicator.className = 'status-indicator status-offline';
+                    statusIndicator.textContent = 'Problème de connexion: ' + issues.join(', ');
+                    serverStatus.isConnected = false;
+                }
+            } catch (error) {
+                const statusIndicator = document.getElementById('status-indicator');
+                statusIndicator.className = 'status-indicator status-offline';
+                statusIndicator.textContent = 'Serveur non disponible';
+                serverStatus.isConnected = false;
+                
+                console.error('Server status check failed:', error);
+            }
+            
+            serverStatus.checked = true;
+            serverStatus.lastCheck = new Date();
+        }
+
+        // Check server status immediately and every 30 seconds
+        checkServerStatus();
+        setInterval(checkServerStatus, 30000);
+
         async function searchProducts(file, retryCount = 0) {
             try {
+                // Check server status first
+                if (!serverStatus.checked || !serverStatus.isConnected) {
+                    await checkServerStatus();
+                    if (!serverStatus.isConnected) {
+                        throw new Error('Le serveur n\'est pas disponible. Veuillez réessayer plus tard.');
+                    }
+                }
+
                 lastFile = file;
                 showLoading(true);
                 const formData = new FormData();

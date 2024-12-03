@@ -286,6 +286,31 @@ def health_check():
             'message': str(e)
         }), 500
 
+@app.route('/test-connection')
+def test_connection():
+    """Test the WooCommerce connection and server status"""
+    try:
+        woo_status = product_manager.test_woocommerce_connection()
+        model_status = feature_extractor is not None
+        
+        return jsonify({
+            'server_status': 'online',
+            'woocommerce_connected': woo_status,
+            'model_loaded': model_status,
+            'total_products': len(product_manager.products),
+            'products_with_features': len(product_manager.features),
+            'environment': {
+                'woo_url_set': bool(WOOCOMMERCE_URL),
+                'consumer_key_set': bool(CONSUMER_KEY),
+                'consumer_secret_set': bool(CONSUMER_SECRET)
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'server_status': 'error',
+            'error_message': str(e)
+        }), 500
+
 @app.after_request
 def after_request(response):
     """Add CORS headers to all responses"""
